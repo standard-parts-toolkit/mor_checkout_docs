@@ -2,15 +2,29 @@
 
 ## Authentication
 
-All API endpoints require HMAC-SHA256 signature authentication using the `X-SPT-MOR-Signature` header:
+All API endpoints require HMAC-SHA256 signature authentication and additional security headers:
+
+### Required Headers
+
+1. `X-SPT-MOR-Signature`: HMAC-SHA256 signature of (requestBody + timestamp)
+2. `X-SPT-MOR-Domain`: Your registered partner domain
+3. `X-SPT-MOR-Timestamp`: Current UTC timestamp in ISO 8601 format
+
+### Signature Generation Process
 
 1. Take the entire request body as a JSON string
-2. Create an HMAC-SHA256 hash of this string using your provided signing key
-3. Include this hash in the `X-SPT-MOR-Signature` header
+2. Get current UTC timestamp in ISO 8601 format (e.g., "2025-06-30T15:30:00Z")
+3. Concatenate request body with timestamp (no separator)
+4. Create an HMAC-SHA256 hash of this concatenated string using your provided signing key
+5. Include all required headers in your request
 
 ```bash
 X-SPT-MOR-Signature: HMAC_SHA256_SIGNATURE_HERE
+X-SPT-MOR-Domain: your-domain.com
+X-SPT-MOR-Timestamp: 2025-06-30T15:30:00Z
 ```
+
+**Note**: Timestamps must be within 5 minutes of the current time to prevent replay attacks.
 
 ## Calculate Tax Estimate
 
@@ -80,10 +94,16 @@ REQUEST_BODY='{
   }
 }'
 
-SIGNATURE=$(echo -n "$REQUEST_BODY" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+# Generate timestamp
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Create signature with concatenated request body and timestamp
+SIGNATURE=$(echo -n "${REQUEST_BODY}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
 
 curl -X POST "http://localhost:8000/api/v1/calculate-tax-estimate" \
   -H "X-SPT-MOR-Signature: $SIGNATURE" \
+  -H "X-SPT-MOR-Domain: your-domain.com" \
+  -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
   -H "Content-Type: application/json" \
   -d "$REQUEST_BODY"
 ```
@@ -176,10 +196,16 @@ REQUEST_BODY='{
   }
 }'
 
-SIGNATURE=$(echo -n "$REQUEST_BODY" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+# Generate timestamp
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Create signature with concatenated request body and timestamp
+SIGNATURE=$(echo -n "${REQUEST_BODY}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
 
 curl -X POST "http://localhost:8000/api/v1/checkout" \
   -H "X-SPT-MOR-Signature: $SIGNATURE" \
+  -H "X-SPT-MOR-Domain: your-domain.com" \
+  -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
   -H "Content-Type: application/json" \
   -d "$REQUEST_BODY"
 ```
@@ -325,26 +351,40 @@ All API responses include rate limiting headers:
 ```javascript
 const crypto = require('crypto');
 
-function generateSignature(requestBody, signingKey) {
+function generateSignature(requestBody, signingKey, timestamp) {
   const jsonString = JSON.stringify(requestBody);
-  return crypto.createHmac('sha256', signingKey).update(jsonString).digest('hex');
+  const dataToSign = jsonString + timestamp;
+  return crypto.createHmac('sha256', signingKey).update(dataToSign).digest('hex');
 }
 
 // Usage
 const requestData = { /* your request data */ };
-const signature = generateSignature(requestData, 'your-signing-key');
+const timestamp = new Date().toISOString().replace(/\.\d{3}/, ''); // Format: 2025-06-30T15:30:00Z
+const signature = generateSignature(requestData, 'your-signing-key', timestamp);
+
+// Include in headers:
+// X-SPT-MOR-Signature: signature
+// X-SPT-MOR-Domain: your-domain.com
+// X-SPT-MOR-Timestamp: timestamp
 ```
 
 ### PHP
 ```php
-function generateSignature($requestBody, $signingKey) {
+function generateSignature($requestBody, $signingKey, $timestamp) {
     $jsonString = json_encode($requestBody);
-    return hash_hmac('sha256', $jsonString, $signingKey);
+    $dataToSign = $jsonString . $timestamp;
+    return hash_hmac('sha256', $dataToSign, $signingKey);
 }
 
 // Usage
 $requestData = [/* your request data */];
-$signature = generateSignature($requestData, 'your-signing-key');
+$timestamp = gmdate('Y-m-d\TH:i:s\Z'); // Format: 2025-06-30T15:30:00Z
+$signature = generateSignature($requestData, 'your-signing-key', $timestamp);
+
+// Include in headers:
+// X-SPT-MOR-Signature: $signature
+// X-SPT-MOR-Domain: your-domain.com
+// X-SPT-MOR-Timestamp: $timestamp
 ```
 
 ### Python
@@ -352,19 +392,27 @@ $signature = generateSignature($requestData, 'your-signing-key');
 import hmac
 import hashlib
 import json
+from datetime import datetime, timezone
 
-def generate_signature(request_body, signing_key):
+def generate_signature(request_body, signing_key, timestamp):
     json_string = json.dumps(request_body, separators=(',', ':'))
+    data_to_sign = json_string + timestamp
     signature = hmac.new(
         signing_key.encode('utf-8'),
-        json_string.encode('utf-8'),
+        data_to_sign.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
     return signature
 
 # Usage
 request_data = {}  # your request data
-signature = generate_signature(request_data, 'your-signing-key')
+timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')  # Format: 2025-06-30T15:30:00Z
+signature = generate_signature(request_data, 'your-signing-key', timestamp)
+
+# Include in headers:
+# X-SPT-MOR-Signature: signature
+# X-SPT-MOR-Domain: your-domain.com
+# X-SPT-MOR-Timestamp: timestamp
 ```
 
 ## Swagger Documentation
