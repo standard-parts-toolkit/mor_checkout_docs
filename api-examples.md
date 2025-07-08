@@ -202,7 +202,9 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Create signature with concatenated request body and timestamp
 SIGNATURE=$(echo -n "${REQUEST_BODY}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
 
-curl -X POST "http://localhost:8000/api/v1/checkout" \
+# Note: The checkout endpoint returns a 302 redirect to the checkout page
+# Use -L flag to follow redirects or -i to see the redirect response
+curl -i -X POST "http://localhost:8000/api/v1/checkout" \
   -H "X-SPT-MOR-Signature: $SIGNATURE" \
   -H "X-SPT-MOR-Domain: your-domain.com" \
   -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
@@ -212,37 +214,20 @@ curl -X POST "http://localhost:8000/api/v1/checkout" \
 
 ### Example Response
 
-```json
-{
-  "status": {
-    "code": "PAYMENT_SUCCEEDED",
-    "message": "Payment was processed successfully"
-  },
-  "merchantOfRecord": {
-    "customerId": "MOR-10042857",
-    "transactionId": "TXN-98765432",
-    "paymentId": "PAY-2023-03-17-001"
-  },
-  "financials": {
-    "totalTaxCharged": 8.75,
-    "lineItemTotals": [
-      {
-        "sku": "PROD-001",
-        "subtotal": 59.98,
-        "discount": 6.00,
-        "total": 53.98
-      }
-    ]
-  },
-  "payment": {
-    "method": "CREDIT_CARD",
-    "cardType": "VISA",
-    "lastFourDigits": "4242",
-    "expiryDate": "05/26",
-    "billingZip": "10002"
-  }
-}
+The checkout endpoint returns a 302 redirect response:
+
+```http
+HTTP/1.1 302 Found
+Location: https://checkout.example.com/session/abc123xyz
+Content-Type: text/html; charset=utf-8
+Content-Length: 0
 ```
+
+The user's browser will automatically follow this redirect to the checkout page where they can complete their payment.
+
+After the checkout process:
+- **Success**: User is redirected to the `successReturnUrl` specified in the request
+- **Failure**: User is redirected to the `failureReturnUrl` specified in the request
 
 ## Error Responses
 
@@ -362,10 +347,33 @@ const requestData = { /* your request data */ };
 const timestamp = new Date().toISOString().replace(/\.\d{3}/, ''); // Format: 2025-06-30T15:30:00Z
 const signature = generateSignature(requestData, 'your-signing-key', timestamp);
 
-// Include in headers:
-// X-SPT-MOR-Signature: signature
-// X-SPT-MOR-Domain: your-domain.com
-// X-SPT-MOR-Timestamp: timestamp
+// Example: Making a checkout request that returns a 302 redirect
+async function initiateCheckout(requestData) {
+  const timestamp = new Date().toISOString().replace(/\.\d{3}/, '');
+  const signature = generateSignature(requestData, 'your-signing-key', timestamp);
+  
+  const response = await fetch('https://api.example.com/api/v1/checkout', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-SPT-MOR-Signature': signature,
+      'X-SPT-MOR-Domain': 'your-domain.com',
+      'X-SPT-MOR-Timestamp': timestamp
+    },
+    body: JSON.stringify(requestData),
+    redirect: 'manual' // Prevent automatic redirect
+  });
+  
+  if (response.status === 302) {
+    const checkoutUrl = response.headers.get('Location');
+    // Redirect user to checkout page
+    window.location.href = checkoutUrl;
+  } else {
+    // Handle error
+    const error = await response.json();
+    console.error('Checkout failed:', error);
+  }
+}
 ```
 
 ### PHP

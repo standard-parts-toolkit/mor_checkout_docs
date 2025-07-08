@@ -45,9 +45,9 @@ sequenceDiagram
     Note over Client: Client shows cart with tax estimates
     
     Client->>API: 2. POST /checkout
-    API->>Client: Return checkout URL
+    API->>Client: 302 Redirect to checkout URL
     
-    Client->>User: 3. Redirect to checkout URL
+    Client->>User: 3. Browser follows redirect
     User->>Checkout: 4. Proceed through checkout process
     
     alt Successful Payment
@@ -63,9 +63,9 @@ sequenceDiagram
 
 1. **Tax Calculation**: The client first makes a POST request to `/calculate-tax-estimate` with the cart information to get accurate tax estimates.
 
-2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information. If successful, the API returns a response that includes a checkout URL.
+2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information. If successful, the API returns a 302 redirect response with the checkout URL in the Location header.
 
-3. **Redirect User**: The client redirects the user to the checkout URL where they will complete the payment process.
+3. **Redirect User**: The browser automatically follows the 302 redirect to the checkout URL where the user will complete the payment process.
 
 4. **Checkout Process**: The user proceeds through the checkout process hosted by the payment system.
 
@@ -114,16 +114,17 @@ async function processCheckout(cartData) {
           'X-SPT-MOR-Domain': 'your-partner-domain.com',
           'X-SPT-MOR-Timestamp': checkoutTimestamp
         },
-        body: JSON.stringify(cartData)
+        body: JSON.stringify(cartData),
+        redirect: 'manual' // Prevent automatic redirect to handle it manually
       });
       
-      const checkoutResult = await checkoutResponse.json();
-      
-      // Step 3: Redirect user to checkout page
-      if (checkoutResult.status.code === 'PAYMENT_INITIATED') {
-        window.location.href = checkoutResult.checkoutUrl;
-      } else {
-        displayError(checkoutResult.errors);
+      // Step 3: Handle the 302 redirect response
+      if (checkoutResponse.status === 302) {
+        const checkoutUrl = checkoutResponse.headers.get('Location');
+        window.location.href = checkoutUrl;
+      } else if (!checkoutResponse.ok) {
+        const errorData = await checkoutResponse.json();
+        displayError(errorData.errors || { message: 'Checkout failed' });
       }
     }
   } catch (error) {
@@ -338,72 +339,16 @@ This endpoint processes checkout operations, including payment processing and or
 }
 ```
 
-#### Response Parameters
+#### Response
 
-| Field | Type | Description |
-|-------|------|-------------|
-| status | object | Status information for the checkout |
-| status.code | string | Status code (e.g., "PAYMENT_SUCCEEDED") |
-| status.message | string | Human-readable status message |
-| merchantOfRecord | object | Merchant of record information |
-| merchantOfRecord.customerId | string | Unique customer identifier in MOR system |
-| merchantOfRecord.transactionId | string | Unique transaction identifier |
-| merchantOfRecord.paymentId | string | Unique payment identifier |
-| financials | object | Financial details of the transaction |
-| financials.totalTaxCharged | number | Total tax amount charged |
-| financials.lineItemTotals | array | Financial details for each line item |
-| financials.lineItemTotals[].sku | string | Product SKU |
-| financials.lineItemTotals[].subtotal | number | Subtotal for this line item |
-| financials.lineItemTotals[].discount | number | Discount amount for this line item |
-| financials.lineItemTotals[].total | number | Total amount for this line item after discounts |
-| payment | object | Payment method details |
-| payment.method | string | Payment method used (e.g., "CREDIT_CARD") |
-| payment.cardType | string | Type of card used (if applicable) |
-| payment.lastFourDigits | string | Last 4 digits of the card (if applicable) |
-| payment.expiryDate | string | Expiration date of the card (MM/YY) |
-| payment.billingZip | string | Billing postal code |
-| error | object | Only present if an error occurred |
-| error.code | string | Error code |
-| error.message | string | Error message |
+Upon successful processing, the API will return a **302 Found** status code with a `Location` header containing the checkout page URL. The client should redirect the user to this URL to complete the checkout process.
 
-#### Example Response (Success)
-```json
-{
-  "status": {
-    "code": "PAYMENT_SUCCEEDED",
-    "message": "Payment was processed successfully"
-  },
-  "merchantOfRecord": {
-    "customerId": "MOR-10042857",
-    "transactionId": "TXN-98765432",
-    "paymentId": "PAY-2023-03-17-001"
-  },
-  "financials": {
-    "totalTaxCharged": 8.75,
-    "lineItemTotals": [
-      {
-        "sku": "PROD-123",
-        "subtotal": 199.99,
-        "discount": 10.00,
-        "total": 189.99
-      },
-      {
-        "sku": "PROD-456",
-        "subtotal": 29.99,
-        "discount": 0.00,
-        "total": 29.99
-      }
-    ]
-  },
-  "payment": {
-    "method": "CREDIT_CARD",
-    "cardType": "VISA",
-    "lastFourDigits": "4242",
-    "expiryDate": "05/26",
-    "billingZip": "02108"
-  }
-}
-```
+**Response Status:** `302 Found`  
+**Response Header:** `Location: https://checkout.example.com/session/abc123xyz`
+
+The user will be redirected to the hosted checkout page where they can complete their payment. After the checkout process is completed:
+- If payment is successful, the user will be redirected to the `successReturnUrl` specified in the request
+- If payment fails or is cancelled, the user will be redirected to the `failureReturnUrl` specified in the request
 
 ### 2. Calculate Tax Estimate
 
