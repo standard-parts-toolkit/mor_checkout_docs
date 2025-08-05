@@ -242,12 +242,13 @@ The checkout status endpoint allows you to retrieve transaction details using th
 ### Example Request
 
 ```bash
-# For GET requests with no body, signature is calculated with empty string
+# For checkout-status requests, signature is calculated with external_order_id
 MOR_ORDER_ID="MOR-123456"
+EXTERNAL_ORDER_ID="ORD-2024-123456"  # The external order ID from the original checkout request
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Create signature with empty JSON object concatenated with timestamp
-SIGNATURE=$(echo -n "{}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+# Create signature with external_order_id concatenated with timestamp
+SIGNATURE=$(echo -n "${EXTERNAL_ORDER_ID}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
 
 curl -X GET "http://localhost:8000/api/v1/checkout-status/$MOR_ORDER_ID" \
   -H "X-SPT-MOR-Signature: $SIGNATURE" \
@@ -401,9 +402,9 @@ All API responses include rate limiting headers:
 ```javascript
 const crypto = require('crypto');
 
-function generateSignature(requestBody, signingKey, timestamp) {
-  const jsonString = JSON.stringify(requestBody);
-  const dataToSign = jsonString + timestamp;
+function generateSignature(data, signingKey, timestamp) {
+  const stringData = typeof data === 'string' ? data : JSON.stringify(data);
+  const dataToSign = stringData + timestamp;
   return crypto.createHmac('sha256', signingKey).update(dataToSign).digest('hex');
 }
 
@@ -441,10 +442,10 @@ async function initiateCheckout(requestData) {
 }
 
 // Example: Checking order status
-async function getCheckoutStatus(morOrderId) {
+async function getCheckoutStatus(morOrderId, externalOrderId) {
   const timestamp = new Date().toISOString().replace(/\.\d{3}/, '');
-  // For GET requests with no body, sign empty object + timestamp
-  const signature = generateSignature({}, 'your-signing-key', timestamp);
+  // For checkout-status requests, sign external_order_id + timestamp
+  const signature = generateSignature(externalOrderId, 'your-signing-key', timestamp);
   
   const response = await fetch(`https://api.example.com/api/v1/checkout-status/${morOrderId}`, {
     method: 'GET',
@@ -471,9 +472,9 @@ async function getCheckoutStatus(morOrderId) {
 
 ### PHP
 ```php
-function generateSignature($requestBody, $signingKey, $timestamp) {
-    $jsonString = json_encode($requestBody);
-    $dataToSign = $jsonString . $timestamp;
+function generateSignature($data, $signingKey, $timestamp) {
+    $stringData = is_string($data) ? $data : json_encode($data);
+    $dataToSign = $stringData . $timestamp;
     return hash_hmac('sha256', $dataToSign, $signingKey);
 }
 
@@ -488,10 +489,10 @@ $signature = generateSignature($requestData, 'your-signing-key', $timestamp);
 // X-SPT-MOR-Timestamp: $timestamp
 
 // Example: Checking order status
-function getCheckoutStatus($morOrderId, $signingKey) {
+function getCheckoutStatus($morOrderId, $externalOrderId, $signingKey) {
     $timestamp = gmdate('Y-m-d\TH:i:s\Z');
-    // For GET requests with no body, sign empty object + timestamp
-    $signature = generateSignature([], $signingKey, $timestamp);
+    // For checkout-status requests, sign external_order_id + timestamp
+    $signature = generateSignature($externalOrderId, $signingKey, $timestamp);
     
     $ch = curl_init("https://api.example.com/api/v1/checkout-status/$morOrderId");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -523,9 +524,9 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-def generate_signature(request_body, signing_key, timestamp):
-    json_string = json.dumps(request_body, separators=(',', ':'))
-    data_to_sign = json_string + timestamp
+def generate_signature(data, signing_key, timestamp):
+    string_data = data if isinstance(data, str) else json.dumps(data, separators=(',', ':'))
+    data_to_sign = string_data + timestamp
     signature = hmac.new(
         signing_key.encode('utf-8'),
         data_to_sign.encode('utf-8'),
@@ -546,10 +547,10 @@ signature = generate_signature(request_data, 'your-signing-key', timestamp)
 # Example: Checking order status
 import requests
 
-def get_checkout_status(mor_order_id, signing_key):
+def get_checkout_status(mor_order_id, external_order_id, signing_key):
     timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    # For GET requests with no body, sign empty dict + timestamp
-    signature = generate_signature({}, signing_key, timestamp)
+    # For checkout-status requests, sign external_order_id + timestamp
+    signature = generate_signature(external_order_id, signing_key, timestamp)
     
     headers = {
         'Content-Type': 'application/json',

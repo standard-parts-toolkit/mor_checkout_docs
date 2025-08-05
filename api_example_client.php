@@ -3,11 +3,11 @@
 /**
  * Simple MOR Checkout API PHP Script
  * Based on Standard Parts Toolkit MOR Checkout API
- * 
+ *
  * This script demonstrates:
  * 1. Making a checkout request (returns 302 redirect)
  * 2. Checking order status using the checkout-status endpoint
- * 
+ *
  * Updated for API v1.3.0 with externalOrderId support
  */
 
@@ -19,10 +19,10 @@ $partner_domain = ''; // Replace with your registered partner domain
 /**
  * Generate HMAC-SHA256 signature for authentication
  */
-function generateSignature($requestBody, $timestamp, $signingKey)
+function generateSignature($data, $timestamp, $signingKey)
 {
-    $jsonString = json_encode($requestBody);
-    $dataToSign = $jsonString . $timestamp;
+    $stringData = is_string($data) ? $data : json_encode($data);
+    $dataToSign = $stringData . $timestamp;
     return hash_hmac('sha256', $dataToSign, $signingKey);
 }
 
@@ -103,11 +103,11 @@ function makeApiRequest($url, $data, $signingKey, $domain, $method = 'POST')
 /**
  * Get checkout status using MOR order ID
  */
-function getCheckoutStatus($morOrderId, $signingKey, $domain, $apiBaseUrl)
+function getCheckoutStatus($morOrderId, $externalOrderId, $signingKey, $domain, $apiBaseUrl)
 {
     $url = $apiBaseUrl . '/checkout-status/' . $morOrderId;
-    // For GET requests, use empty array as data
-    return makeApiRequest($url, [], $signingKey, $domain, 'GET');
+    // For checkout-status requests, use external_order_id as data
+    return makeApiRequest($url, $externalOrderId, $signingKey, $domain, 'GET');
 }
 
 // Sample checkout data based on API examples
@@ -191,29 +191,31 @@ try {
         echo "You should redirect the user to: " . $checkout_response['redirect_url'] . "\n";
         echo "This is the checkout page where the customer will complete payment.\n";
         echo "After payment, the user will be redirected back to your success/failure URLs with mor_order_id and external_order_id parameters.\n";
-        
+
         // Example of how to check order status later using a sample MOR order ID
         echo "\n--- Example: Checking Order Status ---\n";
         try {
             // Replace 'MOR-123456' with an actual MOR order ID you receive
             $sample_mor_order_id = 'MOR-123456';
+            $sample_external_order_id = $checkout_data['configuration']['externalOrderId'];
             echo "Attempting to check status for order: $sample_mor_order_id\n";
-            
-            $status_response = getCheckoutStatus($sample_mor_order_id, $signing_key, $partner_domain, $api_base_url);
-            
+            echo "Using external order ID: $sample_external_order_id\n";
+
+            $status_response = getCheckoutStatus($sample_mor_order_id, $sample_external_order_id, $signing_key, $partner_domain, $api_base_url);
+
             if ($status_response['status_code'] == 200) {
                 echo "Order Status Retrieved Successfully!\n";
                 if (isset($status_response['data']['status'])) {
                     echo "Status: " . $status_response['data']['status']['message'] . "\n";
                 }
-                
+
                 if (isset($status_response['data']['merchantOfRecord'])) {
                     $mor = $status_response['data']['merchantOfRecord'];
                     echo "Customer ID: " . $mor['customerId'] . "\n";
                     echo "Transaction ID: " . $mor['transactionId'] . "\n";
                     echo "Order ID: " . $mor['orderId'] . "\n";
                 }
-                
+
                 if (isset($status_response['data']['financials'])) {
                     $financials = $status_response['data']['financials'];
                     echo "Total Amount: $" . $financials['totalAmount'] . "\n";
@@ -228,7 +230,7 @@ try {
         } catch (Exception $e) {
             echo "Status check example failed: " . $e->getMessage() . "\n";
         }
-        
+
     } else {
         echo "Checkout failed with status: " . $checkout_response['status_code'] . "\n";
         if (isset($checkout_response['data'])) {
