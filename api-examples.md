@@ -89,8 +89,9 @@ REQUEST_BODY='{
   },
   "existingClientId": "CLIENT-789",
   "configuration": {
-    "successReturnUrl": "https://example.com/success",
-    "failureReturnUrl": "https://example.com/failure"
+    "successReturnUrl": "https://example-partner.com/success",
+    "failureReturnUrl": "https://example-partner.com/failure",
+    "externalOrderId": "ORD-2024-123456"
   }
 }'
 
@@ -190,9 +191,10 @@ REQUEST_BODY='{
   },
   "existingClientId": "CLIENT-789",
   "configuration": {
-    "successReturnUrl": "https://example.com/success",
-    "failureReturnUrl": "https://example.com/failure",
-    "allowUserDiscountCodes": true
+    "successReturnUrl": "https://example-partner.com/success",
+    "failureReturnUrl": "https://example-partner.com/failure",
+    "allowUserDiscountCodes": true,
+    "externalOrderId": "ORD-2024-123456"
   }
 }'
 
@@ -226,8 +228,71 @@ Content-Length: 0
 The user's browser will automatically follow this redirect to the checkout page where they can complete their payment.
 
 After the checkout process:
-- **Success**: User is redirected to the `successReturnUrl` specified in the request
-- **Failure**: User is redirected to the `failureReturnUrl` specified in the request
+- **Success**: User is redirected to the `successReturnUrl` with query parameters:
+  - `mor_order_id`: The unique order identifier from the MOR system
+  - `external_order_id`: The external order identifier provided in the request
+  - Example: `https://example-partner.com/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456`
+- **Failure**: User is redirected to the `failureReturnUrl` with the same query parameters
+  - Example: `https://example-partner.com/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456`
+
+## Checkout Status
+
+The checkout status endpoint allows you to retrieve transaction details using the MOR order ID received in the redirect URLs.
+
+### Example Request
+
+```bash
+# For GET requests with no body, signature is calculated with empty string
+MOR_ORDER_ID="MOR-123456"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Create signature with empty JSON object concatenated with timestamp
+SIGNATURE=$(echo -n "{}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+
+curl -X GET "http://localhost:8000/api/v1/checkout-status/$MOR_ORDER_ID" \
+  -H "X-SPT-MOR-Signature: $SIGNATURE" \
+  -H "X-SPT-MOR-Domain: your-domain.com" \
+  -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
+  -H "Content-Type: application/json"
+```
+
+### Example Response (Success)
+
+```json
+{
+  "status": {
+    "code": "PAYMENT_SUCCEEDED",
+    "message": "Payment was processed successfully"
+  },
+  "merchantOfRecord": {
+    "customerId": "MOR-10042857",
+    "transactionId": "TXN-98765432",
+    "orderId": "ORD-2023-03-17-001"
+  },
+  "financials": {
+    "totalAmount": 228.73,
+    "totalDiscount": 10.00,
+    "totalTax": 8.75
+  }
+}
+```
+
+### Example Response (Payment Incomplete)
+
+When the order exists but payment was not completed:
+
+```json
+{
+  "error": {
+    "code": "CHECKOUT_ABANDONED",
+    "message": "The checkout process was abandoned by the user"
+  }
+}
+```
+
+### Example Response (Order Not Found)
+
+When the specified mor_order_id does not exist, the API returns a `404 Not Found` HTTP status code.
 
 ## Error Responses
 
@@ -374,6 +439,34 @@ async function initiateCheckout(requestData) {
     console.error('Checkout failed:', error);
   }
 }
+
+// Example: Checking order status
+async function getCheckoutStatus(morOrderId) {
+  const timestamp = new Date().toISOString().replace(/\.\d{3}/, '');
+  // For GET requests with no body, sign empty object + timestamp
+  const signature = generateSignature({}, 'your-signing-key', timestamp);
+  
+  const response = await fetch(`https://api.example.com/api/v1/checkout-status/${morOrderId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-SPT-MOR-Signature': signature,
+      'X-SPT-MOR-Domain': 'your-domain.com',
+      'X-SPT-MOR-Timestamp': timestamp
+    }
+  });
+  
+  if (response.ok) {
+    const data = await response.json();
+    console.log('Order status:', data);
+    return data;
+  } else if (response.status === 404) {
+    console.error('Order not found');
+  } else {
+    const error = await response.json();
+    console.error('Status check failed:', error);
+  }
+}
 ```
 
 ### PHP
@@ -393,6 +486,34 @@ $signature = generateSignature($requestData, 'your-signing-key', $timestamp);
 // X-SPT-MOR-Signature: $signature
 // X-SPT-MOR-Domain: your-domain.com
 // X-SPT-MOR-Timestamp: $timestamp
+
+// Example: Checking order status
+function getCheckoutStatus($morOrderId, $signingKey) {
+    $timestamp = gmdate('Y-m-d\TH:i:s\Z');
+    // For GET requests with no body, sign empty object + timestamp
+    $signature = generateSignature([], $signingKey, $timestamp);
+    
+    $ch = curl_init("https://api.example.com/api/v1/checkout-status/$morOrderId");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'Content-Type: application/json',
+        'X-SPT-MOR-Signature: ' . $signature,
+        'X-SPT-MOR-Domain: your-domain.com',
+        'X-SPT-MOR-Timestamp: ' . $timestamp
+    ));
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode == 200) {
+        return json_decode($response, true);
+    } elseif ($httpCode == 404) {
+        throw new Exception('Order not found');
+    } else {
+        throw new Exception('Status check failed: ' . $response);
+    }
+}
 ```
 
 ### Python
@@ -421,8 +542,35 @@ signature = generate_signature(request_data, 'your-signing-key', timestamp)
 # X-SPT-MOR-Signature: signature
 # X-SPT-MOR-Domain: your-domain.com
 # X-SPT-MOR-Timestamp: timestamp
+
+# Example: Checking order status
+import requests
+
+def get_checkout_status(mor_order_id, signing_key):
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    # For GET requests with no body, sign empty dict + timestamp
+    signature = generate_signature({}, signing_key, timestamp)
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'X-SPT-MOR-Signature': signature,
+        'X-SPT-MOR-Domain': 'your-domain.com',
+        'X-SPT-MOR-Timestamp': timestamp
+    }
+    
+    response = requests.get(
+        f'https://api.example.com/api/v1/checkout-status/{mor_order_id}',
+        headers=headers
+    )
+    
+    if response.status_code == 200:
+        return response.json()
+    elif response.status_code == 404:
+        raise Exception('Order not found')
+    else:
+        raise Exception(f'Status check failed: {response.text}')
 ```
 
 ## Swagger Documentation
 
-Interactive API documentation is available at: `http://localhost:8000/api/documentation`
+Interactive API documentation is available at: `https://staging-morcheckout.standardpartstoolkit.com/api/documentation`
