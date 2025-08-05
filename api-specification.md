@@ -32,7 +32,7 @@ This document outlines the technical specifications for a payment processing API
 
 ### Checkout Flow Diagram
 
-The following diagram illustrates how the two endpoints interact in a typical checkout flow:
+The following diagram illustrates how the three endpoints interact in a typical checkout flow:
 
 ```mermaid
 sequenceDiagram
@@ -45,40 +45,49 @@ sequenceDiagram
     API->>Client: Return tax calculation
     Note over Client: Client shows cart with tax estimates
     
-    Client->>API: 2. POST /checkout
+    Client->>API: 2. POST /checkout (with externalOrderId)
     API->>Client: 302 Redirect to checkout URL
     
     Client->>User: 3. Browser follows redirect
     User->>Checkout: 4. Proceed through checkout process
     
     alt Successful Payment
-        Checkout->>User: 5a. Redirect to successReturnUrl
+        Checkout->>User: 5a. Redirect to successReturnUrl?mor_order_id=MOR-123&external_order_id=ORD-456
+        User->>Client: 6a. Return to success page with query params
+        Client->>API: 7a. GET /checkout-status/{mor_order_id}
+        API->>Client: Return order details (status, financials, merchantOfRecord)
     else Failed Payment
-        Checkout->>User: 5b. Redirect to failureReturnUrl
+        Checkout->>User: 5b. Redirect to failureReturnUrl?mor_order_id=MOR-123&external_order_id=ORD-456
+        User->>Client: 6b. Return to failure page with query params
+        Client->>API: 7b. GET /checkout-status/{mor_order_id}
+        API->>Client: Return order details or error status
     end
     
-    User->>Client: Return to client application
+    Note over Client: Client can use order details for confirmation, analytics, etc.
 ```
 
 ### Flow Description
 
 1. **Tax Calculation**: The client first makes a POST request to `/calculate-tax-estimate` with the cart information to get accurate tax estimates.
 
-2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information. If successful, the API returns a 302 redirect response with the checkout URL in the Location header.
+2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information, including a required `externalOrderId`. If successful, the API returns a 302 redirect response with the checkout URL in the Location header.
 
 3. **Redirect User**: The browser automatically follows the 302 redirect to the checkout URL where the user will complete the payment process.
 
 4. **Checkout Process**: The user proceeds through the checkout process hosted by the payment system.
 
 5. **Completion and Return**: 
-   - If the payment is successful, the user is redirected to the `successReturnUrl` provided in the initial request.
-   - If the payment fails, the user is redirected to the `failureReturnUrl`.
+   - If the payment is successful, the user is redirected to the `successReturnUrl` with query parameters: `mor_order_id` and `external_order_id`
+   - If the payment fails, the user is redirected to the `failureReturnUrl` with the same query parameters
+
+6. **Order Status Retrieval**: The client can use the `mor_order_id` from the redirect to call the `/checkout-status/{mor_order_id}` endpoint to retrieve detailed transaction information, including merchant of record details and financial totals.
 
 This flow allows the client application to:
 - Get accurate tax estimates before initiating checkout
 - Provide a seamless handoff to the payment system
 - Handle both successful and failed payment scenarios
-- Return users to the appropriate page in the client application after checkout
+- Return users to the appropriate page with order identifiers
+- Retrieve complete order details for confirmation, analytics, or record-keeping
 
 ### Typical Implementation Example
 
