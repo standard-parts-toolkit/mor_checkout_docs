@@ -13,6 +13,7 @@
 6. [API Endpoints](#api-endpoints)
    - [1. Process Checkout](#1-process-checkout)
    - [2. Calculate Tax Estimate](#2-calculate-tax-estimate)
+   - [3. Checkout Status](#3-checkout-status)
 7. [Error Handling](#error-handling)
    - [HTTP Status Codes](#http-status-codes)
    - [Error Response Format](#error-response-format)
@@ -265,6 +266,7 @@ This endpoint processes checkout operations, including payment processing and or
 | configuration.successReturnUrl | string | Yes | URL to redirect after successful checkout |
 | configuration.failureReturnUrl | string | Yes | URL to redirect after failed checkout |
 | configuration.allowUserDiscountCodes | boolean | No | Whether to allow user-entered discount codes |
+| configuration.externalOrderId | string | Yes | External order identifier for partner reference |
 
 #### Example Request
 ```json
@@ -332,9 +334,10 @@ This endpoint processes checkout operations, including payment processing and or
   },
   "existingClientId": "CID-98765",
   "configuration": {
-    "successReturnUrl": "https://zf.com/checkout/success",
-    "failureReturnUrl": "https://zf.com/checkout/failure",
-    "allowUserDiscountCodes": true
+    "successReturnUrl": "https://example-partner.com/checkout/success",
+    "failureReturnUrl": "https://example-partner.com/checkout/failure",
+    "allowUserDiscountCodes": true,
+    "externalOrderId": "ORD-2024-123456"
   }
 }
 ```
@@ -347,8 +350,15 @@ Upon successful processing, the API will return a **302 Found** status code with
 **Response Header:** `Location: https://checkout.example.com/session/abc123xyz`
 
 The user will be redirected to the hosted checkout page where they can complete their payment. After the checkout process is completed:
-- If payment is successful, the user will be redirected to the `successReturnUrl` specified in the request
-- If payment fails or is cancelled, the user will be redirected to the `failureReturnUrl` specified in the request
+- If payment is successful, the user will be redirected to the `successReturnUrl` specified in the request with the following query string parameters appended:
+  - `mor_order_id`: The unique order identifier from the MOR system
+  - `external_order_id`: The external order identifier provided in the request
+  - Any other query string parameters originally included in the success URL will be preserved
+- If payment fails or is cancelled, the user will be redirected to the `failureReturnUrl` specified in the request with the same query string parameters appended
+
+**Example redirect URLs after checkout:**
+- Success: `https://example-partner.com/checkout/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&existing_param=value`
+- Failure: `https://example-partner.com/checkout/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&existing_param=value`
 
 ### 2. Calculate Tax Estimate
 
@@ -476,8 +486,8 @@ The request parameters for the tax estimation endpoint are identical to the chec
   },
   "existingClientId": "CID-98765",
   "configuration": {
-    "successReturnUrl": "https://zf.com/checkout/success",
-    "failureReturnUrl": "https://zf.com/checkout/failure"
+    "successReturnUrl": "https://example-partner.com/checkout/success",
+    "failureReturnUrl": "https://example-partner.com/checkout/failure"
   }
 }
 ```
@@ -516,6 +526,77 @@ The request parameters for the tax estimation endpoint are identical to the chec
         "total": 33.74
       }
     ]
+  }
+}
+```
+
+### 3. Checkout Status
+
+**Endpoint:** `/checkout-status/<mor_order_id>`  
+**Method:** `GET`  
+**Content-Type:** `application/json`
+
+This endpoint retrieves the status and details of a checkout transaction using the MOR order ID. This endpoint requires the same authentication headers as all other endpoints (`X-SPT-MOR-Signature`, `X-SPT-MOR-Domain`, and `X-SPT-MOR-Timestamp`).
+
+#### Request Parameters
+
+The `mor_order_id` is provided as a URL parameter. No request body is required.
+
+**URL Parameter:**
+- `mor_order_id` (string, required): The unique order identifier from the MOR system
+
+**Authentication Note:** Since this is a GET request with no body, the signature should be calculated using an empty string for the request body. The signature is still created by concatenating the empty string with the timestamp: `HMAC-SHA256("" + timestamp, signingKey)`.
+
+#### Example Request
+```
+GET /checkout-status/MOR-123456
+```
+
+#### Response Parameters
+
+| Field | Type | Description |
+|-------|------|-------------|
+| status | object | Status information for the checkout |
+| status.code | string | Status code (e.g., "PAYMENT_SUCCEEDED") |
+| status.message | string | Human-readable status message |
+| merchantOfRecord | object | Merchant of record information |
+| merchantOfRecord.customerId | string | Unique customer identifier in MOR system |
+| merchantOfRecord.transactionId | string | Unique transaction identifier |
+| merchantOfRecord.orderId | string | Unique order identifier |
+| financials | object | Financial details of the transaction |
+| financials.totalAmount | number | Total amount charged |
+| financials.totalDiscount | number | Total discount amount applied |
+| financials.totalTax | number | Total tax amount charged |
+| error | object | Only present if an error occurred |
+| error.code | string | Error code |
+| error.message | string | Error message |
+
+#### Example Response (Success)
+```json
+{
+  "status": {
+    "code": "PAYMENT_SUCCEEDED",
+    "message": "Payment was processed successfully"
+  },
+  "merchantOfRecord": {
+    "customerId": "MOR-10042857",
+    "transactionId": "TXN-98765432",
+    "orderId": "ORD-2023-03-17-001"
+  },
+  "financials": {
+    "totalAmount": 228.73,
+    "totalDiscount": 10.00,
+    "totalTax": 8.75
+  }
+}
+```
+
+#### Example Response (Error)
+```json
+{
+  "error": {
+    "code": "CHECKOUT_ABANDONED",
+    "message": "The checkout process was abandoned by the user"
   }
 }
 ```
@@ -682,6 +763,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2025-08-05 | v1.3.0 | **Checkout Status Endpoint and Enhanced Checkout Flow**<br/>• Added new `/checkout-status/<mor_order_id>` endpoint for retrieving transaction details<br/>• Added required `configuration.externalOrderId` field to `/checkout` endpoint<br/>• Updated checkout redirect behavior to include `mor_order_id` and `external_order_id` query parameters in success/failure URLs<br/>• Checkout status endpoint returns merchant of record IDs (customerId, transactionId, orderId) and financial totals<br/>• Updated all example URLs to use `example-partner.com` for consistency<br/>• Returns 404 for non-existent orders, 200 with error object for incomplete payments |
 | 2025-07-08 | v1.2.0 | **Checkout Endpoint Response Update**<br/>• Changed `/checkout` endpoint to return HTTP 302 redirect instead of JSON response<br/>• Response now includes `Location` header with checkout page URL<br/>• Clients should follow the redirect to complete checkout process<br/>• Updated documentation and examples to reflect new redirect behavior |
 | 2025-06-23 | v1.1.0 | **Enhanced Authentication System**<br/>• Added required `X-SPT-MOR-Domain` header for partner identification<br/>• Added required `X-SPT-MOR-Timestamp` header with 5-minute window validation<br/>• Updated signature calculation to include timestamp (requestBody + timestamp)<br/>• Enhanced security with replay attack protection<br/>• Improved authentication error messages and documentation |
 | 2025-03-27 | v1.0.0 | Initial release |
