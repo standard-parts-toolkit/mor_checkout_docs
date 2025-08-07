@@ -362,12 +362,24 @@ The user will be redirected to the hosted checkout page where they can complete 
 - If payment is successful, the user will be redirected to the `successReturnUrl` specified in the request with the following query string parameters appended:
   - `mor_order_id`: The unique order identifier from the MOR system
   - `external_order_id`: The external order identifier provided in the request
+  - `timestamp`: The UTC timestamp when the redirect was generated, in ISO 8601 format (e.g., `2025-06-17T17:22:00Z`)
+  - `nonce`: A security signature created by hashing the concatenation of external_order_id + timestamp using HMAC-SHA256 with the same signing key used for API authentication
   - Any other query string parameters originally included in the success URL will be preserved
 - If payment fails or is cancelled, the user will be redirected to the `failureReturnUrl` specified in the request with the same query string parameters appended
 
+**Nonce Creation:** The nonce query parameter is created as follows:
+1. Concatenate the external_order_id with the timestamp (e.g., `ORD-2024-1234562025-06-17T17:22:00Z`)
+2. Create an HMAC-SHA256 hash of this concatenated string using your signing key
+3. This hash is included as the `nonce` query parameter in the redirect URL
+
+**Security Validation:** When handling the redirect:
+1. Verify the nonce matches the expected hash of external_order_id + timestamp
+2. Ensure the timestamp is within an acceptable window (recommended: 5 minutes) to prevent replay attacks
+3. After validation, immediately call the checkout-status endpoint to get authoritative order details
+
 **Example redirect URLs after checkout:**
-- Success: `https://example-partner.com/checkout/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&existing_param=value`
-- Failure: `https://example-partner.com/checkout/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&existing_param=value`
+- Success: `https://example-partner.com/checkout/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8&existing_param=value`
+- Failure: `https://example-partner.com/checkout/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8&existing_param=value`
 
 ### 2. Calculate Tax Estimate
 
@@ -772,6 +784,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2025-08-07 | v1.3.1 | **Enhanced Security for Checkout Redirects**<br/>• Added `timestamp` query parameter to success/failure redirect URLs<br/>• Added `nonce` query parameter (HMAC-SHA256 of external_order_id + timestamp) for redirect validation<br/>• Timestamp validation window of 5 minutes to prevent replay attacks<br/>• Updated examples to show proper nonce and timestamp validation |
 | 2025-08-05 | v1.3.0 | **Checkout Status Endpoint and Enhanced Checkout Flow**<br/>• Added new `/checkout-status/<mor_order_id>` endpoint for retrieving transaction details<br/>• Added required `configuration.externalOrderId` field to `/checkout` endpoint<br/>• Updated checkout redirect behavior to include `mor_order_id` and `external_order_id` query parameters in success/failure URLs<br/>• Checkout status endpoint returns merchant of record IDs (customerId, transactionId, orderId) and financial totals<br/>• Checkout status endpoint uses `external_order_id + timestamp` for signature authentication instead of empty body<br/>• Updated all example URLs to use `example-partner.com` for consistency<br/>• Returns 404 for non-existent orders, 200 with error object for incomplete payments |
 | 2025-07-08 | v1.2.0 | **Checkout Endpoint Response Update**<br/>• Changed `/checkout` endpoint to return HTTP 302 redirect instead of JSON response<br/>• Response now includes `Location` header with checkout page URL<br/>• Clients should follow the redirect to complete checkout process<br/>• Updated documentation and examples to reflect new redirect behavior |
 | 2025-06-23 | v1.1.0 | **Enhanced Authentication System**<br/>• Added required `X-SPT-MOR-Domain` header for partner identification<br/>• Added required `X-SPT-MOR-Timestamp` header with 5-minute window validation<br/>• Updated signature calculation to include timestamp (requestBody + timestamp)<br/>• Enhanced security with replay attack protection<br/>• Improved authentication error messages and documentation |

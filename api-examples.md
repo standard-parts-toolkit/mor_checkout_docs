@@ -231,9 +231,11 @@ After the checkout process:
 - **Success**: User is redirected to the `successReturnUrl` with query parameters:
   - `mor_order_id`: The unique order identifier from the MOR system
   - `external_order_id`: The external order identifier provided in the request
-  - Example: `https://example-partner.com/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456`
+  - `timestamp`: The UTC timestamp when the redirect was generated (ISO 8601 format)
+  - `nonce`: A security signature (HMAC-SHA256 hash of external_order_id + timestamp)
+  - Example: `https://example-partner.com/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
 - **Failure**: User is redirected to the `failureReturnUrl` with the same query parameters
-  - Example: `https://example-partner.com/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456`
+  - Example: `https://example-partner.com/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
 
 ## Checkout Status
 
@@ -438,6 +440,41 @@ async function initiateCheckout(requestData) {
     // Handle error
     const error = await response.json();
     console.error('Checkout failed:', error);
+  }
+}
+
+// Example: Handling the redirect from checkout with nonce and timestamp validation
+function handleCheckoutReturn(signingKey) {
+  const urlParams = new URLSearchParams(window.location.search);
+  const morOrderId = urlParams.get('mor_order_id');
+  const externalOrderId = urlParams.get('external_order_id');
+  const timestamp = urlParams.get('timestamp');
+  const nonce = urlParams.get('nonce');
+  
+  if (morOrderId && externalOrderId && timestamp && nonce) {
+    // First, verify the timestamp is within 5 minutes
+    const redirectTime = new Date(timestamp);
+    const now = new Date();
+    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+    
+    if (now - redirectTime > fiveMinutes) {
+      console.error('Timestamp expired - possible replay attack');
+      return;
+    }
+    
+    // Verify the nonce by recreating it with external_order_id + timestamp
+    const crypto = require('crypto');
+    const dataToSign = externalOrderId + timestamp;
+    const expectedNonce = crypto.createHmac('sha256', signingKey)
+      .update(dataToSign)
+      .digest('hex');
+    
+    if (nonce === expectedNonce) {
+      // Nonce and timestamp are valid, proceed to get the checkout status
+      getCheckoutStatus(morOrderId, externalOrderId);
+    } else {
+      console.error('Invalid nonce - possible security issue');
+    }
   }
 }
 

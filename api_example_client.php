@@ -110,6 +110,64 @@ function getCheckoutStatus($morOrderId, $externalOrderId, $signingKey, $domain, 
     return makeApiRequest($url, $externalOrderId, $signingKey, $domain, 'GET');
 }
 
+/**
+ * Validate nonce and timestamp from redirect URL
+ * The nonce is an HMAC-SHA256 hash of external_order_id + timestamp
+ */
+function validateNonceAndTimestamp($externalOrderId, $timestamp, $nonce, $signingKey)
+{
+    // First, verify the timestamp is within 5 minutes
+    $redirectTime = strtotime($timestamp);
+    $now = time();
+    $fiveMinutes = 5 * 60; // 5 minutes in seconds
+    
+    if (($now - $redirectTime) > $fiveMinutes) {
+        throw new Exception('Timestamp expired - possible replay attack');
+    }
+    
+    // Recreate the nonce by hashing external_order_id + timestamp
+    $dataToSign = $externalOrderId . $timestamp;
+    $expectedNonce = hash_hmac('sha256', $dataToSign, $signingKey);
+    
+    // Compare the received nonce with the expected one
+    return hash_equals($expectedNonce, $nonce);
+}
+
+/**
+ * Handle redirect from checkout (success or failure page)
+ * This function demonstrates how to process the return from the checkout
+ */
+function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
+{
+    // Get parameters from query string
+    $morOrderId = isset($_GET['mor_order_id']) ? $_GET['mor_order_id'] : null;
+    $externalOrderId = isset($_GET['external_order_id']) ? $_GET['external_order_id'] : null;
+    $timestamp = isset($_GET['timestamp']) ? $_GET['timestamp'] : null;
+    $nonce = isset($_GET['nonce']) ? $_GET['nonce'] : null;
+    
+    if (!$morOrderId || !$externalOrderId || !$timestamp || !$nonce) {
+        throw new Exception('Missing required parameters from checkout redirect');
+    }
+    
+    echo "Received redirect from checkout:\n";
+    echo "MOR Order ID: $morOrderId\n";
+    echo "External Order ID: $externalOrderId\n";
+    echo "Timestamp: $timestamp\n";
+    echo "Nonce: $nonce\n\n";
+    
+    // Validate the nonce and timestamp
+    if (!validateNonceAndTimestamp($externalOrderId, $timestamp, $nonce, $signingKey)) {
+        throw new Exception('Invalid nonce or expired timestamp - possible security issue');
+    }
+    
+    echo "Nonce and timestamp validated successfully\n\n";
+    
+    // Get the full order status
+    $statusResponse = getCheckoutStatus($morOrderId, $externalOrderId, $signingKey, $domain, $apiBaseUrl);
+    
+    return $statusResponse;
+}
+
 // Sample checkout data based on API examples
 $checkout_data = [
     'cartInformation' => [
@@ -190,7 +248,7 @@ try {
         echo "Checkout initiated with redirect!\n";
         echo "You should redirect the user to: " . $checkout_response['redirect_url'] . "\n";
         echo "This is the checkout page where the customer will complete payment.\n";
-        echo "After payment, the user will be redirected back to your success/failure URLs with mor_order_id and external_order_id parameters.\n";
+        echo "After payment, the user will be redirected back to your success/failure URLs with mor_order_id, external_order_id, timestamp, and nonce parameters.\n";
 
         // Example of how to check order status later using a sample MOR order ID
         echo "\n--- Example: Checking Order Status ---\n";
