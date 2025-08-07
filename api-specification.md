@@ -321,7 +321,7 @@ This endpoint processes checkout operations, including payment processing and or
     "city": "Boston",
     "state": "MA",
     "postalCode": "02108",
-    "country": "USA",
+    "country": "US",
     "phone": "555-123-4567"
   },
   "billingAddress": {
@@ -333,7 +333,7 @@ This endpoint processes checkout operations, including payment processing and or
     "city": "Boston",
     "state": "MA", 
     "postalCode": "02108",
-    "country": "USA",
+    "country": "US",
     "phone": "555-123-4567"
   },
   "email": "john.doe@example.com",
@@ -485,7 +485,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
     "city": "Boston",
     "state": "MA",
     "postalCode": "02108",
-    "country": "USA",
+    "country": "US",
     "phone": "555-123-4567"
   },
   "billingAddress": {
@@ -497,7 +497,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
     "city": "Boston",
     "state": "MA", 
     "postalCode": "02108",
-    "country": "USA",
+    "country": "US",
     "phone": "555-123-4567"
   },
   "email": "john.doe@example.com",
