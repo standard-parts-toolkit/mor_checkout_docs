@@ -101,11 +101,11 @@ function makeApiRequest($url, $data, $signingKey, $domain, $method = 'POST')
 }
 
 /**
- * Get checkout status using MOR order ID
+ * Get checkout status using external order ID
  */
-function getCheckoutStatus($morOrderId, $externalOrderId, $signingKey, $domain, $apiBaseUrl)
+function getCheckoutStatus($externalOrderId, $signingKey, $domain, $apiBaseUrl)
 {
-    $url = $apiBaseUrl . '/checkout-status/' . $morOrderId;
+    $url = $apiBaseUrl . '/checkout-status?external_order_id=' . urlencode($externalOrderId);
     // For checkout-status requests, use external_order_id as data
     return makeApiRequest($url, $externalOrderId, $signingKey, $domain, 'GET');
 }
@@ -163,7 +163,7 @@ function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
     echo "Nonce and timestamp validated successfully\n\n";
     
     // Get the full order status
-    $statusResponse = getCheckoutStatus($morOrderId, $externalOrderId, $signingKey, $domain, $apiBaseUrl);
+    $statusResponse = getCheckoutStatus($externalOrderId, $signingKey, $domain, $apiBaseUrl);
     
     return $statusResponse;
 }
@@ -250,16 +250,13 @@ try {
         echo "This is the checkout page where the customer will complete payment.\n";
         echo "After payment, the user will be redirected back to your success/failure URLs with mor_order_id, external_order_id, timestamp, and nonce parameters.\n";
 
-        // Example of how to check order status later using a sample MOR order ID
+        // Example of how to check order status later using external order ID
         echo "\n--- Example: Checking Order Status ---\n";
         try {
-            // Replace 'MOR-123456' with an actual MOR order ID you receive
-            $sample_mor_order_id = 'MOR-123456';
             $sample_external_order_id = $checkout_data['configuration']['externalOrderId'];
-            echo "Attempting to check status for order: $sample_mor_order_id\n";
             echo "Using external order ID: $sample_external_order_id\n";
 
-            $status_response = getCheckoutStatus($sample_mor_order_id, $sample_external_order_id, $signing_key, $partner_domain, $api_base_url);
+            $status_response = getCheckoutStatus($sample_external_order_id, $signing_key, $partner_domain, $api_base_url);
 
             if ($status_response['status_code'] == 200) {
                 echo "Order Status Retrieved Successfully!\n";
@@ -281,7 +278,7 @@ try {
                     echo "Total Tax: $" . $financials['totalTax'] . "\n";
                 }
             } elseif ($status_response['status_code'] == 404) {
-                echo "Order not found (this is expected for the sample order ID)\n";
+                echo "Order not found (this is expected for the sample external order ID)\n";
             } else {
                 echo "Status check failed with code: " . $status_response['status_code'] . "\n";
             }

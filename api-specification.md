@@ -52,14 +52,14 @@ sequenceDiagram
     User->>Checkout: 4. Proceed through checkout process
     
     alt Successful Payment
-        Checkout->>User: 5a. Redirect to successReturnUrl?mor_order_id=MOR-123&external_order_id=ORD-456
+        Checkout->>User: 5a. Redirect to successReturnUrl
         User->>Client: 6a. Return to success page with query params
-        Client->>API: 7a. GET /checkout-status/{mor_order_id}
+        Client->>API: 7a. GET /checkout-status?external_order_id=ORD-2024-123456
         API->>Client: Return order details (status, financials, merchantOfRecord)
     else Failed Payment
-        Checkout->>User: 5b. Redirect to failureReturnUrl?mor_order_id=MOR-123&external_order_id=ORD-456
+        Checkout->>User: 5b. Redirect to failureReturnUrl
         User->>Client: 6b. Return to failure page with query params
-        Client->>API: 7b. GET /checkout-status/{mor_order_id}
+        Client->>API: 7b. GET /checkout-status?external_order_id=ORD-2024-123456
         API->>Client: Return order details or error status
     end
     
@@ -77,10 +77,10 @@ sequenceDiagram
 4. **Checkout Process**: The user proceeds through the checkout process hosted by the payment system.
 
 5. **Completion and Return**: 
-   - If the payment is successful, the user is redirected to the `successReturnUrl` with query parameters: `mor_order_id` and `external_order_id`
-   - If the payment fails, the user is redirected to the `failureReturnUrl` with the same query parameters
+   - If the payment is successful, the user is redirected to the `successReturnUrl`
+   - If the payment fails, the user is redirected to the `failureReturnUrl`
 
-6. **Order Status Retrieval**: The client can use the `mor_order_id` from the redirect to call the `/checkout-status/{mor_order_id}` endpoint to retrieve detailed transaction information, including merchant of record details and financial totals.
+6. **Order Status Retrieval**: The client can use the `external_order_id` from the original request to call the `/checkout-status?external_order_id=ORD-2024-123456` endpoint to retrieve detailed transaction information, including merchant of record details and financial totals.
 
 This flow allows the client application to:
 - Get accurate tax estimates before initiating checkout
@@ -553,24 +553,24 @@ The request parameters for the tax estimation endpoint are identical to the chec
 
 ### 3. Checkout Status
 
-**Endpoint:** `/checkout-status/<mor_order_id>`  
+**Endpoint:** `/checkout-status`  
 **Method:** `GET`  
 **Content-Type:** `application/json`
 
-This endpoint retrieves the status and details of a checkout transaction using the MOR order ID. This endpoint requires the same authentication headers as all other endpoints (`X-SPT-MOR-Signature`, `X-SPT-MOR-Domain`, and `X-SPT-MOR-Timestamp`).
+This endpoint retrieves the status and details of a checkout transaction using the external order ID. This endpoint requires the same authentication headers as all other endpoints (`X-SPT-MOR-Signature`, `X-SPT-MOR-Domain`, and `X-SPT-MOR-Timestamp`).
 
 #### Request Parameters
 
-The `mor_order_id` is provided as a URL parameter. No request body is required.
+The `external_order_id` is provided as a query parameter. No request body is required.
 
-**URL Parameter:**
-- `mor_order_id` (string, required): The unique order identifier from the MOR system
+**Query Parameter:**
+- `external_order_id` (string, required): The external order identifier provided during checkout
 
 **Authentication Note:** For this GET request, the signature should be calculated using the `external_order_id` from the original checkout request instead of a request body. The signature is created by concatenating the external_order_id with the timestamp: `HMAC-SHA256(external_order_id + timestamp, signingKey)`.
 
 #### Example Request
 ```
-GET /checkout-status/MOR-123456
+GET /checkout-status?external_order_id=ORD-2024-123456
 ```
 
 #### Response Parameters

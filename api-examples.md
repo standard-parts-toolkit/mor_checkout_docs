@@ -245,14 +245,13 @@ The checkout status endpoint allows you to retrieve transaction details using th
 
 ```bash
 # For checkout-status requests, signature is calculated with external_order_id
-MOR_ORDER_ID="MOR-123456"
 EXTERNAL_ORDER_ID="ORD-2024-123456"  # The external order ID from the original checkout request
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Create signature with external_order_id concatenated with timestamp
 SIGNATURE=$(echo -n "${EXTERNAL_ORDER_ID}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
 
-curl -X GET "http://localhost:8000/api/v1/checkout-status/$MOR_ORDER_ID" \
+curl -X GET "http://localhost:8000/api/v1/checkout-status?external_order_id=$EXTERNAL_ORDER_ID" \
   -H "X-SPT-MOR-Signature: $SIGNATURE" \
   -H "X-SPT-MOR-Domain: your-domain.com" \
   -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
@@ -471,7 +470,7 @@ function handleCheckoutReturn(signingKey) {
     
     if (nonce === expectedNonce) {
       // Nonce and timestamp are valid, proceed to get the checkout status
-      getCheckoutStatus(morOrderId, externalOrderId);
+      getCheckoutStatus(externalOrderId);
     } else {
       console.error('Invalid nonce - possible security issue');
     }
@@ -479,12 +478,12 @@ function handleCheckoutReturn(signingKey) {
 }
 
 // Example: Checking order status
-async function getCheckoutStatus(morOrderId, externalOrderId) {
+async function getCheckoutStatus(externalOrderId) {
   const timestamp = new Date().toISOString().replace(/\.\d{3}/, '');
   // For checkout-status requests, sign external_order_id + timestamp
   const signature = generateSignature(externalOrderId, 'your-signing-key', timestamp);
   
-  const response = await fetch(`https://api.example.com/api/v1/checkout-status/${morOrderId}`, {
+  const response = await fetch(`https://api.example.com/api/v1/checkout-status?external_order_id=${externalOrderId}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -526,12 +525,12 @@ $signature = generateSignature($requestData, 'your-signing-key', $timestamp);
 // X-SPT-MOR-Timestamp: $timestamp
 
 // Example: Checking order status
-function getCheckoutStatus($morOrderId, $externalOrderId, $signingKey) {
+function getCheckoutStatus($externalOrderId, $signingKey) {
     $timestamp = gmdate('Y-m-d\TH:i:s\Z');
     // For checkout-status requests, sign external_order_id + timestamp
     $signature = generateSignature($externalOrderId, $signingKey, $timestamp);
     
-    $ch = curl_init("https://api.example.com/api/v1/checkout-status/$morOrderId");
+    $ch = curl_init("https://api.example.com/api/v1/checkout-status?external_order_id=$externalOrderId");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, array(
         'Content-Type: application/json',
@@ -584,7 +583,7 @@ signature = generate_signature(request_data, 'your-signing-key', timestamp)
 # Example: Checking order status
 import requests
 
-def get_checkout_status(mor_order_id, external_order_id, signing_key):
+def get_checkout_status(external_order_id, signing_key):
     timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     # For checkout-status requests, sign external_order_id + timestamp
     signature = generate_signature(external_order_id, signing_key, timestamp)
@@ -597,7 +596,7 @@ def get_checkout_status(mor_order_id, external_order_id, signing_key):
     }
     
     response = requests.get(
-        f'https://api.example.com/api/v1/checkout-status/{mor_order_id}',
+        f'https://api.example.com/api/v1/checkout-status?external_order_id={external_order_id}',
         headers=headers
     )
     
