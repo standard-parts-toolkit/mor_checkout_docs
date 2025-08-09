@@ -13,8 +13,8 @@
 
 // Configuration
 $api_base_url = 'https://staging-morcheckout.standardpartstoolkit.com/api/v1';
-$signing_key = ''; // Replace with your actual signing key
-$partner_domain = ''; // Replace with your registered partner domain
+$signing_key = '4h42feTfbtrFJrB6CHdCAcAXfmsw4eAmjyDzRCGhPUmTahk74KGfTB8mNndgFtchoWr9YKCVboDwEvAV949PFYPUNZ2AuYzcVD73'; // Replace with your actual signing key
+$partner_domain = 'zf.com'; // Replace with your registered partner domain
 
 /**
  * Generate HMAC-SHA256 signature for authentication
@@ -120,15 +120,15 @@ function validateNonceAndTimestamp($externalOrderId, $timestamp, $nonce, $signin
     $redirectTime = strtotime($timestamp);
     $now = time();
     $fiveMinutes = 5 * 60; // 5 minutes in seconds
-    
+
     if (($now - $redirectTime) > $fiveMinutes) {
         throw new Exception('Timestamp expired - possible replay attack');
     }
-    
+
     // Recreate the nonce by hashing external_order_id + timestamp
     $dataToSign = $externalOrderId . $timestamp;
     $expectedNonce = hash_hmac('sha256', $dataToSign, $signingKey);
-    
+
     // Compare the received nonce with the expected one
     return hash_equals($expectedNonce, $nonce);
 }
@@ -144,27 +144,27 @@ function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
     $externalOrderId = isset($_GET['external_order_id']) ? $_GET['external_order_id'] : null;
     $timestamp = isset($_GET['timestamp']) ? $_GET['timestamp'] : null;
     $nonce = isset($_GET['nonce']) ? $_GET['nonce'] : null;
-    
+
     if (!$morOrderId || !$externalOrderId || !$timestamp || !$nonce) {
         throw new Exception('Missing required parameters from checkout redirect');
     }
-    
+
     echo "Received redirect from checkout:\n";
     echo "MOR Order ID: $morOrderId\n";
     echo "External Order ID: $externalOrderId\n";
     echo "Timestamp: $timestamp\n";
     echo "Nonce: $nonce\n\n";
-    
+
     // Validate the nonce and timestamp
     if (!validateNonceAndTimestamp($externalOrderId, $timestamp, $nonce, $signingKey)) {
         throw new Exception('Invalid nonce or expired timestamp - possible security issue');
     }
-    
+
     echo "Nonce and timestamp validated successfully\n\n";
-    
+
     // Get the full order status
     $statusResponse = getCheckoutStatus($externalOrderId, $signingKey, $domain, $apiBaseUrl);
-    
+
     return $statusResponse;
 }
 
@@ -224,7 +224,6 @@ $checkout_data = [
         'originalPurchaseDate' => '2023-01-15',
         'originalTransactionId' => 'TXN-12345'
     ],
-    'existingClientId' => 'CLIENT-789',
     'configuration' => [
         'successReturnUrl' => 'https://example-partner.com/success',
         'failureReturnUrl' => 'https://example-partner.com/failure',
