@@ -46,18 +46,20 @@ sequenceDiagram
     Note over Client: Client shows cart with tax estimates
     
     Client->>API: 2. POST /checkout (with externalOrderId)
-    API->>Client: 302 Redirect to checkout URL
-    
-    Client->>User: 3. Browser follows redirect
-    User->>Checkout: 4. Proceed through checkout process
+    API->>Client: 302 Redirect to payment page URL
+
+    Client->>User: 3. Browser follows redirect to /pay/{order_id}
+    User->>Payment: 4. Proceed through payment process using Stripe Payment Element
     
     alt Successful Payment
-        Checkout->>User: 5a. Redirect to successReturnUrl
+        Payment->>User: 5a. Redirect to /pay/{order_id}/success
+        Payment->>User: 5b. System redirects to successReturnUrl
         User->>Client: 6a. Return to success page with query params
         Client->>API: 7a. GET /checkout-status?external_order_id=ORD-2024-123456
         API->>Client: Return order details (status, financials, merchantOfRecord)
-    else Failed Payment
-        Checkout->>User: 5b. Redirect to failureReturnUrl
+    else Failed/Cancelled Payment
+        Payment->>User: 5c. Redirect to /pay/{order_id}/cancel
+        Payment->>User: 5d. System redirects to failureReturnUrl
         User->>Client: 6b. Return to failure page with query params
         Client->>API: 7b. GET /checkout-status?external_order_id=ORD-2024-123456
         API->>Client: Return order details or error status
@@ -70,22 +72,22 @@ sequenceDiagram
 
 1. **Tax Calculation**: The client first makes a POST request to `/calculate-tax-estimate` with the cart information to get accurate tax estimates.
 
-2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information, including a required `externalOrderId`. If successful, the API returns a 302 redirect response with the checkout URL in the Location header.
+2. **Initiate Checkout**: The client then makes a POST request to `/checkout` with the same information, including a required `externalOrderId`. If successful, the API returns a 302 redirect response with the payment page URL in the Location header.
 
-3. **Redirect User**: The browser automatically follows the 302 redirect to the checkout URL where the user will complete the payment process.
+3. **Redirect User**: The browser automatically follows the 302 redirect to the payment page (`/pay/{order_id}`) where the user will complete the payment process.
 
-4. **Checkout Process**: The user proceeds through the checkout process hosted by the payment system.
+4. **Payment Process**: The user proceeds through the payment process using Stripe's Payment Element interface on the hosted payment page.
 
-5. **Completion and Return**: 
-   - If the payment is successful, the user is redirected to the `successReturnUrl`
-   - If the payment fails, the user is redirected to the `failureReturnUrl`
+5. **Completion and Return**:
+   - If the payment is successful, the user is first redirected to `/pay/{order_id}/success`, then automatically redirected to the `successReturnUrl`
+   - If the payment fails or is cancelled, the user is first redirected to `/pay/{order_id}/cancel`, then automatically redirected to the `failureReturnUrl`
 
 6. **Order Status Retrieval**: The client can use the `external_order_id` from the original request to call the `/checkout-status?external_order_id=ORD-2024-123456` endpoint to retrieve detailed transaction information, including merchant of record details and financial totals.
 
 This flow allows the client application to:
-- Get accurate tax estimates before initiating checkout
-- Provide a seamless handoff to the payment system
-- Handle both successful and failed payment scenarios
+- Get accurate tax estimates before initiating payment
+- Provide a seamless handoff to the Stripe Payment Element
+- Handle both successful and failed payment scenarios with intermediate processing pages
 - Return users to the appropriate page with order identifiers
 - Retrieve complete order details for confirmation, analytics, or record-keeping
 
@@ -130,8 +132,8 @@ async function processCheckout(cartData) {
       
       // Step 3: Handle the 302 redirect response
       if (checkoutResponse.status === 302) {
-        const checkoutUrl = checkoutResponse.headers.get('Location');
-        window.location.href = checkoutUrl;
+        const paymentPageUrl = checkoutResponse.headers.get('Location');
+        window.location.href = paymentPageUrl; // Redirects to /pay/{order_id}
       } else if (!checkoutResponse.ok) {
         const errorData = await checkoutResponse.json();
         displayError(errorData.errors || { message: 'Checkout failed' });
@@ -152,11 +154,11 @@ function generateSignature(data, timestamp, key) {
 }
 ```
 
-After the checkout process completes, the user will be redirected to one of the URLs specified in the `configuration` object:
-- `successReturnUrl`: If payment was successful
-- `failureReturnUrl`: If payment failed
+After the payment process completes, the user will be redirected through intermediate success/cancel pages and then to one of the URLs specified in the `configuration` object:
+- `successReturnUrl`: If payment was successful (redirected via `/pay/{order_id}/success`)
+- `failureReturnUrl`: If payment failed or was cancelled (redirected via `/pay/{order_id}/cancel`)
 
-The client application should be prepared to handle both scenarios, typically by checking for status parameters in the redirect URL.
+The client application should be prepared to handle both scenarios, typically by checking for status parameters in the redirect URL. The intermediate pages handle order status updates and webhooks before the final redirect.
 
 ## Base URL
 ```
@@ -253,7 +255,7 @@ This endpoint processes checkout operations, including payment processing and or
 | shippingAddress.city | string | Yes | City |
 | shippingAddress.state | string | Yes | State or province |
 | shippingAddress.postalCode | string | Yes | ZIP or postal code |
-| shippingAddress.country | string | Yes | Country |
+| shippingAddress.country | string | Yes | Country code (currently only "US" is supported) |
 | shippingAddress.phone | string | Yes | Phone number |
 | billingAddress | object | Yes | Billing address information |
 | billingAddress.sameAsShipping | boolean | No | Whether billing address is the same as shipping |
@@ -264,7 +266,7 @@ This endpoint processes checkout operations, including payment processing and or
 | billingAddress.city | string | Yes (if not sameAsShipping) | City |
 | billingAddress.state | string | Yes (if not sameAsShipping) | State or province |
 | billingAddress.postalCode | string | Yes (if not sameAsShipping) | ZIP or postal code |
-| billingAddress.country | string | Yes (if not sameAsShipping) | Country |
+| billingAddress.country | string | Yes (if not sameAsShipping) | Country code (currently only "US" is supported) |
 | billingAddress.phone | string | Yes (if not sameAsShipping) | Phone number |
 | email | string | Yes | Customer email address |
 | renewal | object | No | Information for renewal purchases |
@@ -356,11 +358,11 @@ This endpoint processes checkout operations, including payment processing and or
 Upon successful processing, the API will return a **302 Found** status code with a `Location` header containing the checkout page URL. The client should redirect the user to this URL to complete the checkout process.
 
 **Response Status:** `302 Found`  
-**Response Header:** `Location: https://checkout.example.com/session/abc123xyz`
+**Response Header:** `Location: https://api.example.com/pay/550e8400-e29b-41d4-a716-446655440000`
 
-The user will be redirected to the hosted checkout page where they can complete their payment. After the checkout process is completed:
+The user will be redirected to the hosted payment page where they can complete their payment using Stripe's Payment Element. After the payment process is completed:
 - If payment is successful, the user will be redirected to the `successReturnUrl` specified in the request with the following query string parameters appended:
-  - `mor_order_id`: The unique order identifier from the MOR system
+  - `mor_order_id`: The unique order identifier from the MOR system (UUID format)
   - `external_order_id`: The external order identifier provided in the request
   - `timestamp`: The UTC timestamp when the redirect was generated, in ISO 8601 format (e.g., `2025-06-17T17:22:00Z`)
   - `nonce`: A security signature created by hashing the concatenation of external_order_id + timestamp using HMAC-SHA256 with the same signing key used for API authentication
@@ -419,7 +421,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | shippingAddress.city | string | Yes | City |
 | shippingAddress.state | string | Yes | State or province |
 | shippingAddress.postalCode | string | Yes | ZIP or postal code |
-| shippingAddress.country | string | Yes | Country |
+| shippingAddress.country | string | Yes | Country code (currently only "US" is supported) |
 | shippingAddress.phone | string | Yes | Phone number |
 | billingAddress | object | Yes | Billing address information |
 | billingAddress.sameAsShipping | boolean | No | Whether billing address is the same as shipping |
@@ -430,7 +432,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | billingAddress.city | string | Yes (if not sameAsShipping) | City |
 | billingAddress.state | string | Yes (if not sameAsShipping) | State or province |
 | billingAddress.postalCode | string | Yes (if not sameAsShipping) | ZIP or postal code |
-| billingAddress.country | string | Yes (if not sameAsShipping) | Country |
+| billingAddress.country | string | Yes (if not sameAsShipping) | Country code (currently only "US" is supported) |
 | billingAddress.phone | string | Yes (if not sameAsShipping) | Phone number |
 | email | string | Yes | Customer email address |
 | renewal | object | No | Information for renewal purchases |
@@ -735,6 +737,11 @@ The response includes:
       "field": "email",
       "code": "INVALID_FORMAT",
       "message": "Please provide a valid email address."
+    },
+    {
+      "field": "shippingAddress.country",
+      "code": "INVALID_FORMAT",
+      "message": "The selected shipping address.country is invalid."
     }
   ],
   "requestId": "req-1234567-abcd-efgh-5678"
@@ -767,7 +774,7 @@ The API uses versioning in the URL path (e.g., `/v1/checkout`). When breaking ch
 
 - All dates and times are in ISO 8601 format (e.g., `2025-03-27T14:30:00Z`)
 - All monetary amounts are decimal numbers with up to 2 decimal places
-- All country codes use ISO 3166-1 alpha-2 format
+- All country codes use ISO 3166-1 alpha-2 format (currently only "US" is supported)
 - All currency codes use ISO 4217 format
 
 ## Testing
@@ -784,6 +791,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2025-09-19 | v1.3.2 | **Payment Flow Terminology Updates**<br/>• Updated documentation terminology from "checkout flow" to "payment flow" to better reflect the user experience<br/>• Enhanced descriptions to clarify the payment page (`/pay/{order_id}`) uses Stripe's Payment Element<br/>• Updated example client code to use payment flow terminology<br/>• Improved clarity around intermediate success/cancel pages in the payment process |
 | 2025-08-07 | v1.3.1 | **Enhanced Security for Checkout Redirects**<br/>• Added `timestamp` query parameter to success/failure redirect URLs<br/>• Added `nonce` query parameter (HMAC-SHA256 of external_order_id + timestamp) for redirect validation<br/>• Timestamp validation window of 5 minutes to prevent replay attacks<br/>• Updated examples to show proper nonce and timestamp validation |
 | 2025-08-05 | v1.3.0 | **Checkout Status Endpoint and Enhanced Checkout Flow**<br/>• Added new `/checkout-status/<mor_order_id>` endpoint for retrieving transaction details<br/>• Added required `configuration.externalOrderId` field to `/checkout` endpoint<br/>• Updated checkout redirect behavior to include `mor_order_id` and `external_order_id` query parameters in success/failure URLs<br/>• Checkout status endpoint returns merchant of record IDs (customerId, transactionId, orderId) and financial totals<br/>• Checkout status endpoint uses `external_order_id + timestamp` for signature authentication instead of empty body<br/>• Updated all example URLs to use `example-partner.com` for consistency<br/>• Returns 404 for non-existent orders, 200 with error object for incomplete payments |
 | 2025-07-08 | v1.2.0 | **Checkout Endpoint Response Update**<br/>• Changed `/checkout` endpoint to return HTTP 302 redirect instead of JSON response<br/>• Response now includes `Location` header with checkout page URL<br/>• Clients should follow the redirect to complete checkout process<br/>• Updated documentation and examples to reflect new redirect behavior |

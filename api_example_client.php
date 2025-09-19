@@ -1,15 +1,15 @@
 <?php
 
 /**
- * Simple MOR Checkout API PHP Script
- * Based on Standard Parts Toolkit MOR Checkout API
+ * Simple MOR Payment Processing API PHP Script
+ * Based on Standard Parts Toolkit MOR Payment API
  *
  * This script demonstrates:
  * 1. Calculating tax estimates before checkout
- * 2. Making a checkout request (returns 302 redirect)
+ * 2. Making a checkout request (returns 302 redirect to payment page)
  * 3. Checking order status using the checkout-status endpoint
  *
- * Updated for API v1.3.0 with externalOrderId support and tax calculation
+ * Updated for API v1.3.1 with enhanced security for payment flow redirects
  */
 
 // Configuration
@@ -144,8 +144,8 @@ function validateNonceAndTimestamp($externalOrderId, $timestamp, $nonce, $signin
 }
 
 /**
- * Handle redirect from checkout (success or failure page)
- * This function demonstrates how to process the return from the checkout
+ * Handle redirect from payment process (success or failure page)
+ * This function demonstrates how to process the return from the payment flow
  */
 function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
 {
@@ -156,10 +156,10 @@ function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
     $nonce = isset($_GET['nonce']) ? $_GET['nonce'] : null;
 
     if (!$morOrderId || !$externalOrderId || !$timestamp || !$nonce) {
-        throw new Exception('Missing required parameters from checkout redirect');
+        throw new Exception('Missing required parameters from payment flow redirect');
     }
 
-    echo "Received redirect from checkout:\n";
+    echo "Received redirect from payment process:\n";
     echo "MOR Order ID: $morOrderId\n";
     echo "External Order ID: $externalOrderId\n";
     echo "Timestamp: $timestamp\n";
@@ -273,9 +273,9 @@ try {
         echo "\n";
     }
 
-    echo "--- Example: Processing Checkout ---\n";
+    echo "--- Example: Initiating Payment Flow ---\n";
 
-    // Process the checkout
+    // Initiate the payment flow
     $checkout_url = $api_base_url . '/checkout';
     $checkout_response = makeApiRequest($checkout_url, $checkout_data, $signing_key, $partner_domain);
 
@@ -284,10 +284,10 @@ try {
     echo json_encode($checkout_response['data'], JSON_PRETTY_PRINT) . "\n\n";
 
     if ($checkout_response['status_code'] >= 300 && $checkout_response['status_code'] < 400) {
-        echo "Checkout initiated with redirect!\n";
+        echo "Payment flow initiated with redirect!\n";
         echo "You should redirect the user to: " . $checkout_response['redirect_url'] . "\n";
-        echo "This is the checkout page where the customer will complete payment.\n";
-        echo "After payment, the user will be redirected back to your success/failure URLs with mor_order_id, external_order_id, timestamp, and nonce parameters.\n";
+        echo "This is the payment page (/pay/{order_id}) where the customer will complete payment using Stripe's Payment Element.\n";
+        echo "After payment, the user will be redirected through intermediate success/cancel pages, then to your success/failure URLs with mor_order_id, external_order_id, timestamp, and nonce parameters.\n";
 
         // Example of how to check order status later using external order ID
         echo "\n--- Example: Checking Order Status ---\n";
@@ -326,7 +326,7 @@ try {
         }
 
     } else {
-        echo "Checkout failed with status: " . $checkout_response['status_code'] . "\n";
+        echo "Payment flow initiation failed with status: " . $checkout_response['status_code'] . "\n";
         if (isset($checkout_response['data'])) {
             echo "Response: " . json_encode($checkout_response['data'], JSON_PRETTY_PRINT) . "\n";
         }

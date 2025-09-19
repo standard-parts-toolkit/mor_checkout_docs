@@ -220,22 +220,30 @@ The checkout endpoint returns a 302 redirect response:
 
 ```http
 HTTP/1.1 302 Found
-Location: https://checkout.example.com/session/abc123xyz
+Location: https://api.example.com/pay/550e8400-e29b-41d4-a716-446655440000
 Content-Type: text/html; charset=utf-8
 Content-Length: 0
 ```
 
-The user's browser will automatically follow this redirect to the checkout page where they can complete their payment.
+The user's browser will automatically follow this redirect to the payment page (`/pay/{order_id}`) where they can complete their payment using Stripe's Payment Element interface.
 
-After the checkout process:
+After the payment process completes:
 - **Success**: User is redirected to the `successReturnUrl` with query parameters:
-  - `mor_order_id`: The unique order identifier from the MOR system
+  - `mor_order_id`: The unique order identifier from the MOR system (UUID format)
   - `external_order_id`: The external order identifier provided in the request
   - `timestamp`: The UTC timestamp when the redirect was generated (ISO 8601 format)
   - `nonce`: A security signature (HMAC-SHA256 hash of external_order_id + timestamp)
-  - Example: `https://example-partner.com/success?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
+  - Example: `https://example-partner.com/success?mor_order_id=550e8400-e29b-41d4-a716-446655440000&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
 - **Failure**: User is redirected to the `failureReturnUrl` with the same query parameters
-  - Example: `https://example-partner.com/failure?mor_order_id=MOR-123456&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
+  - Example: `https://example-partner.com/failure?mor_order_id=550e8400-e29b-41d4-a716-446655440000&external_order_id=ORD-2024-123456&timestamp=2025-06-17T17:22:00Z&nonce=a3f2b8c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8`
+
+**Payment Flow Details:**
+1. After checkout API call, user is redirected to `/pay/{order_id}` payment page
+2. Payment page loads Stripe's Payment Element with the order details
+3. User enters payment information and submits
+4. On successful payment, user is redirected to `/pay/{order_id}/success`
+5. On cancelled payment, user is redirected to `/pay/{order_id}/cancel`
+6. The success/cancel handlers then redirect to the appropriate `successReturnUrl` or `failureReturnUrl`
 
 ## Checkout Status
 
@@ -432,9 +440,9 @@ async function initiateCheckout(requestData) {
   });
   
   if (response.status === 302) {
-    const checkoutUrl = response.headers.get('Location');
-    // Redirect user to checkout page
-    window.location.href = checkoutUrl;
+    const paymentPageUrl = response.headers.get('Location');
+    // Redirect user to payment page (format: /pay/{order_id})
+    window.location.href = paymentPageUrl;
   } else {
     // Handle error
     const error = await response.json();
