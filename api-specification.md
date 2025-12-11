@@ -18,6 +18,7 @@
    - [HTTP Status Codes](#http-status-codes)
    - [Error Response Format](#error-response-format)
    - [Common Error Codes](#common-error-codes)
+   - [Status Code Dictionary](#status-code-dictionary)
 8. [Rate Limiting](#rate-limiting)
 9. [Versioning](#versioning)
 10. [Data Types and Formats](#data-types-and-formats)
@@ -677,6 +678,21 @@ The response includes:
 | TAX_CALCULATION_ERROR | Unable to calculate taxes for the given items/address |
 | INVALID_DISCOUNT | The discount code is invalid or expired |
 | INTERNAL_ERROR | An unexpected error occurred on the server |
+
+### Status Code Dictionary
+
+The following status codes can be returned in the `status.code` field of API responses, particularly from the `/checkout-status` endpoint:
+
+| Status Code | Description | Returned When |
+|-------------|-------------|---------------|
+| PAYMENT_SUCCEEDED | Payment was processed successfully | Order status is `paid` - the payment has been successfully processed and confirmed via the `payment_intent.succeeded` webhook |
+| PAYMENT_PENDING | Payment is still being processed | Order status is `pending` - the payment is in progress but not yet confirmed |
+| PAYMENT_PENDING_CONFIRMATION | Payment is awaiting confirmation | Order status is `pending_payment_confirmation` - the payment has been initiated and is awaiting final confirmation |
+| PAYMENT_FAILED | Payment failed to process | Order status is `failed` - the payment could not be completed due to processing errors |
+| PAYMENT_REFUNDED | Payment was refunded | Order status is `refunded` - a previously successful payment has been refunded |
+| CHECKOUT_ABANDONED | The checkout process was abandoned by the user | Order status is `cancelled` - the user abandoned or cancelled the checkout process before completing payment |
+| NOT_FOUND | Order not found | The requested order does not exist in the system |
+| UNKNOWN_STATUS | Order status is unknown | The order exists but has an unrecognized status |
 
 ### Authentication Error Messages
 
