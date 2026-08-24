@@ -1,7 +1,8 @@
 # Proposed API & Documentation Changes — Multi-Currency and PO/Invoice Orders
 
-**Status:** Part A **applied** on branch `feature/multi-currency-spec` (except A.4 — see below).
-Parts B and C remain a draft for review and approval.
+**Status:** Part A applied on `feature/multi-currency-spec` (except A.4). **Part B applied on
+`feature/po-invoice-spec`**, stacked on that branch. Part C is internal design and was implemented
+rather than published.
 **Author:** Engineering
 **Date:** 2026-08-23 (Part A applied 2026-08-24)
 **Scope:** Partner-facing contract changes in this repo (`api-specification.md`, `api-examples.md`,
@@ -23,6 +24,8 @@ docs and the code sit on paired branches and can be reviewed together.
 | A.6 partner-enablement error | Applied — rewritten into this spec's `errors: [{field, code, message}]` shape rather than the raw Laravel `errors` map shown below |
 | A.7 examples and sample client | Applied — explicit `"currency": "USD"` in all four example payloads, a full CAD checkout example, and a documented `'currency'` key in `api_example_client.php` |
 | A.8 changelog | Applied as v1.4.0 with a placeholder date (`2026-XX-XX`) — needs the real release date |
+| B.1–B.8 | Applied on `feature/po-invoice-spec` as v1.5.0, also with a placeholder date. `INVOICE_PAYMENT_FAILED` (B.3) was **not** published — it was not implemented |
+| C | Implemented, not published — internal design, not partner API surface |
 
 Parts B and C below are unapplied. Each is written so that, once approved, it can be applied
 mechanically.
@@ -217,15 +220,14 @@ Add to **Common Error Codes** / validation examples — the partner-enablement r
 
 # Part B — PO / Invoice orders
 
-**Status 2026-08-24: implemented in the application, NOT published to partners.**
+**Status 2026-08-24: implemented in the application AND applied to this spec** on
+`feature/po-invoice-spec`, at the maintainer's direction.
 
-The flow now exists on `mor_checkout` @ `feature/po-invoice-flow` and is documented in that repo's
-`api-specification.md`. It is deliberately **not** applied to this repo yet, for the same reason A.4
-was held back: decision 7 below (redirect semantics) is still unsigned, and publishing a partner
-contract that a pending decision could still change is worse than publishing nothing.
+Decision 7 (redirect semantics) is still unsigned. It was implemented as the recommendation here —
+one redirect contract, partners branch on `status.code` — and the spec now documents that. If the
+decision goes the other way, both the code and this section change together.
 
-What was built matches the proposals below, with three deliberate differences worth reading before
-approving:
+The spec documents **what was built**, which differs from the proposals below in three places:
 
 | Proposed | Built | Note |
 |---|---|---|
@@ -233,9 +235,12 @@ approving:
 | B.4 `invoice.status` includes all four Stripe states | As proposed | `void` and `uncollectible` move the order to `CHECKOUT_ABANDONED` |
 | B.8 Mexico exclusion | Enforced in code (`config/invoicing.countries` is `US`, `CA`) | The 422 message is `"Invoicing is not available for orders shipping to MX."` |
 
-Apply the sections below once decision 7 is signed off.
+The sections below are retained as the record of what was proposed and why. Where they disagree
+with `api-specification.md`, the spec is correct.
 
-Everything below is written so that, once approved, it can be applied mechanically.
+Part C (the capture form) was implemented and is not partner API surface, so it was not published
+verbatim; what a partner needs to know about it — that the buyer sees a PO form instead of the
+payment page — is in the spec's **Invoice Payment Flow** section.
 
 ### B.1 How an order is marked as a PO/invoice order
 

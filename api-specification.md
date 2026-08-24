@@ -6,6 +6,7 @@
 2. [API Flow](#api-flow)
    - [Checkout Flow Diagram](#checkout-flow-diagram)
    - [Flow Description](#flow-description)
+   - [Invoice Payment Flow](#invoice-payment-flow)
    - [Typical Implementation Example](#typical-implementation-example)
 3. [Base URL](#base-url)
 4. [Authentication](#authentication)
@@ -85,12 +86,65 @@ sequenceDiagram
 
 6. **Order Status Retrieval**: The client can use the `external_order_id` from the original request to call the `/checkout-status?external_order_id=ORD-2024-123456` endpoint to retrieve detailed transaction information, including merchant of record details and financial totals.
 
+For invoice orders (`configuration.paymentFlow` of `"invoice"`), steps 3–5 differ — see
+[Invoice Payment Flow](#invoice-payment-flow).
+
 This flow allows the client application to:
 - Get accurate tax estimates before initiating payment
 - Provide a seamless handoff to the Stripe Payment Element
 - Handle both successful and failed payment scenarios with intermediate processing pages
 - Return users to the appropriate page with order identifiers
 - Retrieve complete order details for confirmation, analytics, or record-keeping
+
+### Invoice Payment Flow
+
+Partners enabled for invoicing can set `configuration.paymentFlow` to `"invoice"` on `/checkout`.
+The buyer is not asked to pay. They are sent to a purchase-order capture form, an invoice is issued
+against the order, and payment arrives later — through your buyer's accounts payable process, not
+through this API.
+
+The card flow above is unchanged and remains the default. Everything below applies only when
+`paymentFlow` is `"invoice"`.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as API Server
+    participant User
+    participant AP as AP / Buyer Finance
+
+    Client->>API: POST /checkout (configuration.paymentFlow = "invoice")
+    API->>Client: 302 Redirect to /pay/{order_id}
+    Client->>User: Browser follows redirect
+    Note over User: Purchase order capture form,<br/>not the Payment Element
+    User->>API: Submits PO number (+ optional PO document)
+    Note over API: Invoice created and finalized
+    API->>AP: Invoice delivered
+    API->>User: Redirect to successReturnUrl
+    Client->>API: GET /checkout-status?external_order_id=...
+    API->>Client: status.code = INVOICE_ISSUED  (payment NOT received)
+
+    Note over AP: ...days or weeks later...
+    AP->>API: Invoice paid
+    Client->>API: GET /checkout-status?external_order_id=...
+    API->>Client: status.code = PAYMENT_SUCCEEDED  (safe to fulfil)
+```
+
+**What differs from the card flow:**
+
+1. **The buyer never sees the Payment Element.** `/pay/{order_id}` renders a purchase-order capture
+   form: PO number, an optional PO document upload, and an acknowledgement of the payment terms.
+2. **The success redirect fires at invoice issuance**, not at payment. This is the single most
+   important difference. Do not fulfil on it.
+3. **`/checkout-status` returns `INVOICE_ISSUED`** until the invoice is paid, then
+   `PAYMENT_SUCCEEDED`. Branch on `status.code`; there is no second endpoint to integrate.
+4. **Payment terms** come from your partner account, or from `configuration.invoiceDueInDays` per
+   order (1–90 days).
+5. **`merchantOfRecord.transactionId` is null** until payment is received.
+
+The invoice payment flow is available for orders shipping to the **US and Canada**. Orders shipping
+to Mexico must use `paymentFlow: "card"` — a Mexican corporate buyer is legally entitled to a CFDI
+*factura* stamped by a SAT-certified PAC, which a standard invoice does not satisfy.
 
 ### Typical Implementation Example
 
@@ -285,6 +339,19 @@ This endpoint processes checkout operations, including payment processing and or
 | configuration.failureReturnUrl | string | Yes | URL to redirect after failed checkout |
 | configuration.allowUserDiscountCodes | boolean | No | Whether to allow user-entered discount codes |
 | configuration.externalOrderId | string | Yes | External order identifier for partner reference |
+| configuration.paymentFlow | string | No | Payment flow for this order. `"card"` (default) collects payment immediately on the payment page. `"invoice"` collects a purchase order and issues an invoice payable later. `"invoice"` requires your partner account to be enabled for invoicing. |
+| configuration.purchaseOrderNumber | string | No | Purchase order number, if you already hold it. Pre-fills the capture form; the buyer can correct it. Ignored when `paymentFlow` is `"card"`. |
+| configuration.invoiceDueInDays | integer | No | Payment terms in days (1–90). Defaults to the value configured on your partner account. Ignored when `paymentFlow` is `"card"`. |
+
+> **Invoice orders: do not fulfil on the redirect alone.** For `paymentFlow: "card"`, arrival at your
+> `successReturnUrl` means payment has been taken. For `paymentFlow: "invoice"`, it means an invoice
+> has been issued and payment is outstanding — possibly for weeks, possibly never. Always call
+> `/checkout-status` and branch on `status.code`: fulfil on `PAYMENT_SUCCEEDED`, hold on
+> `INVOICE_ISSUED`.
+>
+> The redirect for an invoice order also carries `payment_flow=invoice`. It is a **hint only**. The
+> `nonce` covers `external_order_id + timestamp` and does **not** cover this parameter, so it is not
+> tamper-evident and must never be the basis for fulfilment.
 
 #### Example Request
 ```json
@@ -607,6 +674,31 @@ GET /checkout-status?external_order_id=ORD-2024-123456
 | error | object | Only present if an error occurred |
 | error.code | string | Error code |
 | error.message | string | Error message |
+| paymentFlow | string | Invoice orders only. `"card"` or `"invoice"` |
+| purchaseOrder | object | Invoice orders only |
+| purchaseOrder.number | string | Purchase order number captured from the buyer |
+| purchaseOrder.documentReceived | boolean | Whether a purchase order document was uploaded |
+| invoice | object | Present once an invoice has been issued |
+| invoice.number | string | Invoice number |
+| invoice.status | string | `open`, `paid`, `uncollectible`, or `void` |
+| invoice.currency | string | ISO 4217 currency code |
+| invoice.amountDue | number | Amount outstanding |
+| invoice.amountPaid | number | Amount paid to date |
+| invoice.dueAt | string | ISO 8601 due date |
+| invoice.issuedAt | string | ISO 8601 issuance timestamp |
+| invoice.paidAt | string\|null | ISO 8601 payment timestamp, null while outstanding |
+| invoice.hostedUrl | string | Hosted invoice page where the buyer can view and pay |
+| invoice.pdfUrl | string | Direct link to the invoice PDF |
+
+`paymentFlow`, `purchaseOrder` and `invoice` are **absent entirely for card orders**. An existing
+integration sees no change to its responses.
+
+`merchantOfRecord.transactionId` is **`null` on an invoice order until payment is received** — there
+is no payment transaction at issuance time. If your integration treats it as always present, handle
+the null before enabling invoicing.
+
+`invoice.hostedUrl` and `invoice.pdfUrl` are unauthenticated links: anyone holding one can view and
+pay the invoice. Treat them as you would the invoice document itself.
 
 #### Example Response (Success)
 ```json
@@ -627,6 +719,47 @@ GET /checkout-status?external_order_id=ORD-2024-123456
   }
 }
 ```
+
+#### Example Response (Invoice Order)
+```json
+{
+  "status": {
+    "code": "INVOICE_ISSUED",
+    "message": "An invoice has been issued and payment is outstanding"
+  },
+  "paymentFlow": "invoice",
+  "purchaseOrder": {
+    "number": "PO-4471",
+    "documentReceived": true
+  },
+  "merchantOfRecord": {
+    "customerId": "MOR-10042857",
+    "transactionId": null,
+    "orderId": "ORD-2023-03-17-001"
+  },
+  "financials": {
+    "totalAmount": 228.73,
+    "totalDiscount": 10.00,
+    "totalTax": 8.75
+  },
+  "invoice": {
+    "number": "A1B2C3-0001",
+    "status": "open",
+    "currency": "USD",
+    "amountDue": 228.73,
+    "amountPaid": 0.00,
+    "dueAt": "2026-09-23T00:00:00Z",
+    "issuedAt": "2026-08-24T14:02:11Z",
+    "paidAt": null,
+    "hostedUrl": "https://invoice.stripe.com/i/acct_.../live_...",
+    "pdfUrl": "https://pay.stripe.com/invoice/acct_.../pdf"
+  }
+}
+```
+
+Once the invoice is paid, the same request returns `status.code` of `PAYMENT_SUCCEEDED`,
+`invoice.status` of `paid`, a populated `invoice.paidAt`, and a non-null
+`merchantOfRecord.transactionId`. **That is the point at which it is safe to fulfil.**
 
 #### Example Response (Error)
 ```json
@@ -705,7 +838,16 @@ The following status codes can be returned in the `status.code` field of API res
 | PAYMENT_REFUNDED | Payment was refunded | Order status is `refunded` - a previously successful payment has been refunded |
 | CHECKOUT_ABANDONED | The checkout process was abandoned by the user | Order status is `cancelled` - the user abandoned or cancelled the checkout process before completing payment |
 | NOT_FOUND | Order not found | The requested order does not exist in the system |
+| AWAITING_PURCHASE_ORDER | Awaiting purchase order details from the buyer | Invoice orders only. The buyer has been sent to the purchase-order capture form but has not completed it — or has just submitted it and the invoice is still being issued |
+| INVOICE_ISSUED | An invoice has been issued and payment is outstanding | Invoice orders only. The invoice has been finalized and is payable. Payment has **not** been received. Do not fulfil on this status alone |
 | UNKNOWN_STATUS | Order status is unknown | The order exists but has an unrecognized status |
+
+Two notes on invoice orders:
+
+- A **failed payment attempt against an invoice does not change the order's status.** The order stays
+  at `INVOICE_ISSUED` and the invoice remains open and payable — the buyer can simply try again.
+  There is no separate "invoice payment failed" status.
+- A **voided or uncollectible invoice** reports as `CHECKOUT_ABANDONED`.
 
 ### Authentication Error Messages
 
@@ -786,6 +928,47 @@ A `cartInformation.currency` that is a valid ISO 4217 code but is not enabled fo
 account is rejected the same way. Currency enablement is per partner account — contact support to
 have a currency enabled.
 
+#### Example Invoice Flow Error Responses
+
+Invoicing is enabled per partner account and is not available in every country. Both of the
+following are 422s that a correctly-formed request can still receive:
+
+```json
+{
+  "status": {
+    "code": "INVALID_REQUEST",
+    "message": "The request contains validation errors."
+  },
+  "errors": [
+    {
+      "field": "configuration.paymentFlow",
+      "code": "INVALID_FORMAT",
+      "message": "Invoicing is not enabled for this partner account."
+    }
+  ],
+  "requestId": "req-1234567-abcd-efgh-5678"
+}
+```
+
+```json
+{
+  "status": {
+    "code": "INVALID_REQUEST",
+    "message": "The request contains validation errors."
+  },
+  "errors": [
+    {
+      "field": "configuration.paymentFlow",
+      "code": "INVALID_FORMAT",
+      "message": "Invoicing is not available for orders shipping to MX."
+    }
+  ],
+  "requestId": "req-1234567-abcd-efgh-5678"
+}
+```
+
+`configuration.invoiceDueInDays` outside 1–90 is rejected on that field.
+
 ## Rate Limiting
 
 To ensure the stability and performance of the API, rate limits are applied:
@@ -846,6 +1029,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-XX-XX | v1.5.0 | **PO / Invoice Payment Flow**<br/>• Added `configuration.paymentFlow` (`"card"` default, `"invoice"`) to `/checkout`<br/>• Added optional `configuration.purchaseOrderNumber` and `configuration.invoiceDueInDays`<br/>• Invoice orders send the buyer to a purchase-order capture form instead of the payment page<br/>• **The success redirect for invoice orders means "invoice issued", not "payment received"** — branch on `status.code` before fulfilling<br/>• Added `AWAITING_PURCHASE_ORDER` and `INVOICE_ISSUED` status codes<br/>• `/checkout-status` now returns `paymentFlow`, `purchaseOrder` and `invoice` for invoice orders<br/>• `merchantOfRecord.transactionId` is null on invoice orders until payment is received<br/>• Invoicing is enabled per partner account and is available for orders shipping to the US and Canada only |
 | 2026-XX-XX | v1.4.0 | **Multi-Currency Support (USD/CAD/MXN)**<br/>• Added optional `cartInformation.currency` to `/checkout` and `/calculate-tax-estimate`, defaulting to `USD`<br/>• Shipping and billing `country` now accept `US`, `CA`, `MX`<br/>• **Breaking:** `state` is now validated as an ISO 3166-2 subdivision code for all countries, including the US<br/>• `/calculate-tax-estimate` now enforces the same country allowlist as `/checkout`<br/>• Currencies are enabled per partner account; an unenabled currency returns 422<br/>• Prices are charged in the currency supplied — no conversion is performed |
 | 2025-09-19 | v1.3.2 | **Payment Flow Terminology Updates**<br/>• Updated documentation terminology from "checkout flow" to "payment flow" to better reflect the user experience<br/>• Enhanced descriptions to clarify the payment page (`/pay/{order_id}`) uses Stripe's Payment Element<br/>• Updated example client code to use payment flow terminology<br/>• Improved clarity around intermediate success/cancel pages in the payment process |
 | 2025-08-07 | v1.3.1 | **Enhanced Security for Checkout Redirects**<br/>• Added `timestamp` query parameter to success/failure redirect URLs<br/>• Added `nonce` query parameter (HMAC-SHA256 of external_order_id + timestamp) for redirect validation<br/>• Timestamp validation window of 5 minutes to prevent replay attacks<br/>• Updated examples to show proper nonce and timestamp validation |

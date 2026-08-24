@@ -307,6 +307,74 @@ name returns a 422. The payment page presents card only for CAD; ACH bank debit 
 If your partner account is not enabled for CAD the request is rejected with a 422 on
 `cartInformation.currency`. Contact support to have a currency enabled.
 
+### Example Request — Invoice / PO Order
+
+Requires your partner account to be enabled for invoicing. The buyer is sent to a purchase-order
+capture form rather than the payment page, and **no payment is taken**.
+
+```bash
+REQUEST_BODY='{
+  "cartInformation": {
+    "currency": "USD",
+    "lineItems": [
+      {
+        "sku": "PROD-123",
+        "price": 199.99,
+        "quantity": 2,
+        "description": "1 Year Annual License",
+        "discounts": []
+      }
+    ]
+  },
+  "orderDiscounts": [],
+  "shippingAddress": {
+    "firstName": "Dana",
+    "lastName": "Whitfield",
+    "addressLine1": "1200 Industrial Pkwy",
+    "city": "Columbus",
+    "state": "OH",
+    "postalCode": "43215",
+    "country": "US",
+    "phone": "+1-614-555-0177"
+  },
+  "billingAddress": { "sameAsShipping": true },
+  "email": "dana.whitfield@example.com",
+  "configuration": {
+    "successReturnUrl": "https://example-partner.com/success",
+    "failureReturnUrl": "https://example-partner.com/failure",
+    "externalOrderId": "ORD-2024-123458",
+    "paymentFlow": "invoice",
+    "purchaseOrderNumber": "PO-4471",
+    "invoiceDueInDays": 30
+  }
+}'
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+SIGNATURE=$(echo -n "${REQUEST_BODY}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+
+curl -X POST "http://localhost:8000/api/v1/checkout" \
+  -H "X-SPT-MOR-Signature: $SIGNATURE" \
+  -H "X-SPT-MOR-Domain: your-domain.com" \
+  -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
+  -H "Content-Type: application/json" \
+  -d "$REQUEST_BODY" -i
+```
+
+`purchaseOrderNumber` and `invoiceDueInDays` are both optional. The PO number pre-fills the capture
+form and the buyer can correct it; the due days default to your account setting.
+
+**The success redirect means the invoice was issued, not that payment arrived.** Poll
+`/checkout-status` and branch on `status.code`:
+
+```
+AWAITING_PURCHASE_ORDER   buyer has not completed the capture form yet -- hold
+INVOICE_ISSUED            invoice is open and payable -- hold, do NOT fulfil
+PAYMENT_SUCCEEDED         invoice paid -- safe to fulfil
+```
+
+A `paymentFlow` of `"invoice"` for a partner account that is not enabled for invoicing, or for an
+order shipping to Mexico, is rejected with a 422 on `configuration.paymentFlow`.
+
 ## Checkout Status
 
 The checkout status endpoint allows you to retrieve transaction details using the MOR order ID received in the redirect URLs.
