@@ -230,9 +230,15 @@ This endpoint processes checkout operations, including payment processing and or
 
 #### Request Parameters
 
+> **Change of behaviour (v1.4.0):** `state` is now validated as an ISO 3166-2 subdivision code for
+> every supported country, including the US. Sending `"California"` instead of `"CA"` now returns a
+> 422 validation error; previously it was accepted and produced a less accurate tax calculation.
+> All examples in this document and all documented test fixtures already use 2-letter codes.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | cartInformation | object | Yes | Information about cart contents |
+| cartInformation.currency | string | No | ISO 4217 currency code for all prices in this cart. One of "USD", "CAD", "MXN". Defaults to "USD" when omitted. Must be enabled for your partner account. |
 | cartInformation.lineItems | array | Yes | Array of items in the cart |
 | cartInformation.lineItems[].sku | string | Yes | Product SKU identifier |
 | cartInformation.lineItems[].price | number | Yes | Price per unit |
@@ -254,9 +260,9 @@ This endpoint processes checkout operations, including payment processing and or
 | shippingAddress.addressLine1 | string | Yes | Primary street address |
 | shippingAddress.addressLine2 | string | No | Secondary address information (apt, suite, etc.) |
 | shippingAddress.city | string | Yes | City |
-| shippingAddress.state | string | Yes | State or province |
+| shippingAddress.state | string | Yes | ISO 3166-2 subdivision code for the country, without the country prefix (e.g. "NY", "ON", "JAL") |
 | shippingAddress.postalCode | string | Yes | ZIP or postal code |
-| shippingAddress.country | string | Yes | Country code (currently only "US" is supported) |
+| shippingAddress.country | string | Yes | ISO 3166-1 alpha-2 country code. One of "US", "CA", "MX" |
 | shippingAddress.phone | string | Yes | Phone number |
 | billingAddress | object | Yes | Billing address information |
 | billingAddress.sameAsShipping | boolean | No | Whether billing address is the same as shipping |
@@ -265,9 +271,9 @@ This endpoint processes checkout operations, including payment processing and or
 | billingAddress.addressLine1 | string | Yes (if not sameAsShipping) | Primary street address |
 | billingAddress.addressLine2 | string | No | Secondary address information (apt, suite, etc.) |
 | billingAddress.city | string | Yes (if not sameAsShipping) | City |
-| billingAddress.state | string | Yes (if not sameAsShipping) | State or province |
+| billingAddress.state | string | Yes (if not sameAsShipping) | ISO 3166-2 subdivision code for the country, without the country prefix (e.g. "NY", "ON", "JAL") |
 | billingAddress.postalCode | string | Yes (if not sameAsShipping) | ZIP or postal code |
-| billingAddress.country | string | Yes (if not sameAsShipping) | Country code (currently only "US" is supported) |
+| billingAddress.country | string | Yes (if not sameAsShipping) | ISO 3166-1 alpha-2 country code. One of "US", "CA", "MX" |
 | billingAddress.phone | string | Yes (if not sameAsShipping) | Phone number |
 | email | string | Yes | Customer email address |
 | renewal | object | No | Information for renewal purchases |
@@ -284,6 +290,7 @@ This endpoint processes checkout operations, including payment processing and or
 ```json
 {
   "cartInformation": {
+    "currency": "USD",
     "lineItems": [
       {
         "sku": "PROD-123",
@@ -392,6 +399,10 @@ The user will be redirected to the hosted payment page where they can complete t
 
 This endpoint calculates tax estimates for a given set of items and location.
 
+> **Change of behaviour (v1.4.0):** this endpoint now enforces the same `US`/`CA`/`MX` country
+> allowlist as `/checkout`, and the same ISO 3166-2 `state` validation. It previously accepted any
+> country string.
+
 #### Request Parameters
 
 The request parameters for the tax estimation endpoint are identical to the checkout endpoint. This ensures consistency and allows for tax estimation before finalizing the checkout.
@@ -399,6 +410,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | cartInformation | object | Yes | Information about cart contents |
+| cartInformation.currency | string | No | ISO 4217 currency code for all prices in this cart. One of "USD", "CAD", "MXN". Defaults to "USD" when omitted. Must be enabled for your partner account. |
 | cartInformation.lineItems | array | Yes | Array of items in the cart |
 | cartInformation.lineItems[].sku | string | Yes | Product SKU identifier |
 | cartInformation.lineItems[].price | number | Yes | Price per unit |
@@ -420,9 +432,9 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | shippingAddress.addressLine1 | string | Yes | Primary street address |
 | shippingAddress.addressLine2 | string | No | Secondary address information (apt, suite, etc.) |
 | shippingAddress.city | string | Yes | City |
-| shippingAddress.state | string | Yes | State or province |
+| shippingAddress.state | string | Yes | ISO 3166-2 subdivision code for the country, without the country prefix (e.g. "NY", "ON", "JAL") |
 | shippingAddress.postalCode | string | Yes | ZIP or postal code |
-| shippingAddress.country | string | Yes | Country code (currently only "US" is supported) |
+| shippingAddress.country | string | Yes | ISO 3166-1 alpha-2 country code. One of "US", "CA", "MX" |
 | shippingAddress.phone | string | Yes | Phone number |
 | billingAddress | object | Yes | Billing address information |
 | billingAddress.sameAsShipping | boolean | No | Whether billing address is the same as shipping |
@@ -431,9 +443,9 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | billingAddress.addressLine1 | string | Yes (if not sameAsShipping) | Primary street address |
 | billingAddress.addressLine2 | string | No | Secondary address information (apt, suite, etc.) |
 | billingAddress.city | string | Yes (if not sameAsShipping) | City |
-| billingAddress.state | string | Yes (if not sameAsShipping) | State or province |
+| billingAddress.state | string | Yes (if not sameAsShipping) | ISO 3166-2 subdivision code for the country, without the country prefix (e.g. "NY", "ON", "JAL") |
 | billingAddress.postalCode | string | Yes (if not sameAsShipping) | ZIP or postal code |
-| billingAddress.country | string | Yes (if not sameAsShipping) | Country code (currently only "US" is supported) |
+| billingAddress.country | string | Yes (if not sameAsShipping) | ISO 3166-1 alpha-2 country code. One of "US", "CA", "MX" |
 | billingAddress.phone | string | Yes (if not sameAsShipping) | Phone number |
 | email | string | Yes | Customer email address |
 | renewal | object | No | Information for renewal purchases |
@@ -448,6 +460,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
 ```json
 {
   "cartInformation": {
+    "currency": "USD",
     "lineItems": [
       {
         "sku": "PROD-123",
@@ -758,11 +771,20 @@ The following status codes can be returned in the `status.code` field of API res
       "field": "shippingAddress.country",
       "code": "INVALID_FORMAT",
       "message": "The selected shipping address.country is invalid."
+    },
+    {
+      "field": "cartInformation.currency",
+      "code": "INVALID_FORMAT",
+      "message": "The selected cart information.currency is invalid: CAD is not enabled for this partner."
     }
   ],
   "requestId": "req-1234567-abcd-efgh-5678"
 }
 ```
+
+A `cartInformation.currency` that is a valid ISO 4217 code but is not enabled for your partner
+account is rejected the same way. Currency enablement is per partner account — contact support to
+have a currency enabled.
 
 ## Rate Limiting
 
@@ -790,8 +812,25 @@ The API uses versioning in the URL path (e.g., `/v1/checkout`). When breaking ch
 
 - All dates and times are in ISO 8601 format (e.g., `2025-03-27T14:30:00Z`)
 - All monetary amounts are decimal numbers with up to 2 decimal places
-- All country codes use ISO 3166-1 alpha-2 format (currently only "US" is supported)
-- All currency codes use ISO 4217 format
+- All country codes use ISO 3166-1 alpha-2 format ("US", "CA", "MX")
+- All state/province values use ISO 3166-2 subdivision codes without the country prefix ("NY", not "New York"; "ON", not "Ontario"; "JAL", not "Jalisco")
+- All currency codes use ISO 4217 format ("USD", "CAD", "MXN")
+- Prices are always expressed in `cartInformation.currency`. No conversion is performed: the amount you send is the amount charged
+- Currency is independent of the shipping and billing country. A Canadian shipping address paying in USD is valid
+
+### Supported Currencies
+
+| Currency | Code | Payment methods presented on the payment page |
+|----------|------|-----------------------------------------------|
+| US Dollar | USD | Card, ACH bank debit (`us_bank_account`) |
+| Canadian Dollar | CAD | Card |
+| Mexican Peso | MXN | Card |
+
+Currencies are enabled per partner account. A request using a currency your account is not enabled
+for is rejected with a 422. Contact support to have a currency enabled.
+
+ACH bank debit is USD-only; it is not a general bank-transfer method. Asynchronous methods that
+settle after the buyer leaves the payment page (OXXO, SPEI, ACSS/PAD) are not offered.
 
 ## Testing
 
@@ -807,6 +846,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-XX-XX | v1.4.0 | **Multi-Currency Support (USD/CAD/MXN)**<br/>• Added optional `cartInformation.currency` to `/checkout` and `/calculate-tax-estimate`, defaulting to `USD`<br/>• Shipping and billing `country` now accept `US`, `CA`, `MX`<br/>• **Breaking:** `state` is now validated as an ISO 3166-2 subdivision code for all countries, including the US<br/>• `/calculate-tax-estimate` now enforces the same country allowlist as `/checkout`<br/>• Currencies are enabled per partner account; an unenabled currency returns 422<br/>• Prices are charged in the currency supplied — no conversion is performed |
 | 2025-09-19 | v1.3.2 | **Payment Flow Terminology Updates**<br/>• Updated documentation terminology from "checkout flow" to "payment flow" to better reflect the user experience<br/>• Enhanced descriptions to clarify the payment page (`/pay/{order_id}`) uses Stripe's Payment Element<br/>• Updated example client code to use payment flow terminology<br/>• Improved clarity around intermediate success/cancel pages in the payment process |
 | 2025-08-07 | v1.3.1 | **Enhanced Security for Checkout Redirects**<br/>• Added `timestamp` query parameter to success/failure redirect URLs<br/>• Added `nonce` query parameter (HMAC-SHA256 of external_order_id + timestamp) for redirect validation<br/>• Timestamp validation window of 5 minutes to prevent replay attacks<br/>• Updated examples to show proper nonce and timestamp validation |
 | 2025-08-05 | v1.3.0 | **Checkout Status Endpoint and Enhanced Checkout Flow**<br/>• Added new `/checkout-status/<mor_order_id>` endpoint for retrieving transaction details<br/>• Added required `configuration.externalOrderId` field to `/checkout` endpoint<br/>• Updated checkout redirect behavior to include `mor_order_id` and `external_order_id` query parameters in success/failure URLs<br/>• Checkout status endpoint returns merchant of record IDs (customerId, transactionId, orderId) and financial totals<br/>• Checkout status endpoint uses `external_order_id + timestamp` for signature authentication instead of empty body<br/>• Updated all example URLs to use `example-partner.com` for consistency<br/>• Returns 404 for non-existent orders, 200 with error object for incomplete payments |

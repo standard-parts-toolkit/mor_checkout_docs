@@ -34,6 +34,7 @@ X-SPT-MOR-Timestamp: 2025-06-30T15:30:00Z
 # First, generate the signature (example using openssl)
 REQUEST_BODY='{
   "cartInformation": {
+    "currency": "USD",
     "lineItems": [
       {
         "sku": "PROD-001",
@@ -136,6 +137,7 @@ curl -X POST "http://localhost:8000/api/v1/calculate-tax-estimate" \
 # Generate signature for checkout request
 REQUEST_BODY='{
   "cartInformation": {
+    "currency": "USD",
     "lineItems": [
       {
         "sku": "PROD-001",
@@ -244,6 +246,66 @@ After the payment process completes:
 4. On successful payment, user is redirected to `/pay/{order_id}/success`
 5. On cancelled payment, user is redirected to `/pay/{order_id}/cancel`
 6. The success/cancel handlers then redirect to the appropriate `successReturnUrl` or `failureReturnUrl`
+
+### Example Request — Canadian Dollars (CAD)
+
+Identical to the request above except for `cartInformation.currency` and the address subdivision
+codes. Prices are charged in the currency supplied — no conversion is performed, so `price` values
+are already CAD. Currency is independent of the shipping country: a Canadian address paying in USD
+is equally valid.
+
+```bash
+REQUEST_BODY='{
+  "cartInformation": {
+    "currency": "CAD",
+    "lineItems": [
+      {
+        "sku": "PROD-123",
+        "price": 274.99,
+        "quantity": 2,
+        "description": "1 Year Annual License",
+        "discounts": []
+      }
+    ]
+  },
+  "orderDiscounts": [],
+  "shippingAddress": {
+    "firstName": "Marie",
+    "lastName": "Tremblay",
+    "addressLine1": "500 Rue Sainte-Catherine O",
+    "city": "Montreal",
+    "state": "QC",
+    "postalCode": "H3B 1B4",
+    "country": "CA",
+    "phone": "+1-514-555-0142"
+  },
+  "billingAddress": {
+    "sameAsShipping": true
+  },
+  "email": "marie.tremblay@example.com",
+  "configuration": {
+    "successReturnUrl": "https://example-partner.com/success",
+    "failureReturnUrl": "https://example-partner.com/failure",
+    "externalOrderId": "ORD-2024-123457"
+  }
+}'
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+SIGNATURE=$(echo -n "${REQUEST_BODY}${TIMESTAMP}" | openssl dgst -sha256 -hmac "YOUR_SIGNING_KEY" -binary | base64)
+
+curl -X POST "http://localhost:8000/api/v1/checkout" \
+  -H "X-SPT-MOR-Signature: $SIGNATURE" \
+  -H "X-SPT-MOR-Domain: your-domain.com" \
+  -H "X-SPT-MOR-Timestamp: $TIMESTAMP" \
+  -H "Content-Type: application/json" \
+  -d "$REQUEST_BODY" -i
+```
+
+`state` must be an ISO 3166-2 subdivision code for the country — `QC`, not `Quebec`. Sending a full
+name returns a 422. The payment page presents card only for CAD; ACH bank debit is USD-only.
+
+If your partner account is not enabled for CAD the request is rejected with a 422 on
+`cartInformation.currency`. Contact support to have a currency enabled.
 
 ## Checkout Status
 
