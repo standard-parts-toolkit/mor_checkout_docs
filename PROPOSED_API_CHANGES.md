@@ -34,7 +34,7 @@ mechanically.
 | Phase | Engineering state | Partner docs state |
 |---|---|---|
 | **Phase 1 — Multi-currency (USD/CAD/MXN)** | Code-complete, unit-tested, committed on `feature/phase-1-multi-currency`. Blocked on partner→currency mapping and CA/MX Stripe Tax registrations, not on code. | **Current** on `feature/multi-currency-spec` — Part A applied 2026-08-24. Was stale ("currently only US is supported", no `cartInformation.currency`). |
-| **Phase 2 — Invoice issuance / PO capture** | Not started. Design only. Blocked on the redirect-semantics decision. | Not documented. |
+| **Phase 2 — Invoice issuance / PO capture** | **Built 2026-08-24** on `mor_checkout` @ `feature/po-invoice-flow`, with the application's own `api-specification.md` updated alongside it. Issuance is unverified against real Stripe. Invoice *delivery* is not built. | **Not documented here.** Parts B and C below remain unapplied — the redirect-semantics decision is still unsigned. |
 | **Phase 3 — Invoice delivery** | Not started. Blocked on transactional email infrastructure (`MAIL_MAILER` is still `log`). | Not documented. |
 
 The published spec in this repo has drifted behind the application's own
@@ -54,6 +54,12 @@ The published spec in this repo has drifted behind the application's own
 ---
 
 ## 2. Verification — is the PO flow indicated via the API today?
+
+> **Superseded 2026-08-24.** The verification below was accurate when written, and remains accurate
+> for the **shipped** API and for this repo. It is no longer true of the application: the flow was
+> built on `feature/po-invoice-flow`, and `mor_checkout/api-specification.md` now documents
+> `configuration.paymentFlow`, the `AWAITING_PURCHASE_ORDER` / `INVOICE_ISSUED` status codes and the
+> `/checkout-status` invoice fields. The grid is kept as the record of what prompted Part B.
 
 **No. There is no PO or invoice indicator anywhere in the shipped API.** Verified against both the
 application and this repo:
@@ -211,7 +217,25 @@ Add to **Common Error Codes** / validation examples — the partner-enablement r
 
 # Part B — PO / Invoice orders
 
-New contract surface. Everything here is a proposal; none of it exists.
+**Status 2026-08-24: implemented in the application, NOT published to partners.**
+
+The flow now exists on `mor_checkout` @ `feature/po-invoice-flow` and is documented in that repo's
+`api-specification.md`. It is deliberately **not** applied to this repo yet, for the same reason A.4
+was held back: decision 7 below (redirect semantics) is still unsigned, and publishing a partner
+contract that a pending decision could still change is worse than publishing nothing.
+
+What was built matches the proposals below, with three deliberate differences worth reading before
+approving:
+
+| Proposed | Built | Note |
+|---|---|---|
+| B.3 lists `INVOICE_PAYMENT_FAILED` as a status code | **Not implemented.** A failed attempt leaves the order `INVOICE_ISSUED` | The invoice stays open and payable; a distinct code would suggest the order is dead when the buyer can simply pay again. Drop it from B.3 unless a partner has a concrete use for it. |
+| B.4 `invoice.status` includes all four Stripe states | As proposed | `void` and `uncollectible` move the order to `CHECKOUT_ABANDONED` |
+| B.8 Mexico exclusion | Enforced in code (`config/invoicing.countries` is `US`, `CA`) | The 422 message is `"Invoicing is not available for orders shipping to MX."` |
+
+Apply the sections below once decision 7 is signed off.
+
+Everything below is written so that, once approved, it can be applied mechanically.
 
 ### B.1 How an order is marked as a PO/invoice order
 
@@ -489,7 +513,7 @@ stays available as a schedule lever rather than becoming a mid-flight redesign.
 | 4 | Advance notice of the `state` subdivision change (A.5) | Send before release | Partner relationship | Phase 1 release |
 | 5 | Add `financials.currency` to `/checkout-status` (A.4) | Yes | Engineering | — |
 | 6 | Publish the per-currency payment-method table (A.3) | Yes | Product | — |
-| 7 | **Redirect semantics for invoice orders (B.2)** | Single contract, branch on status | Partner relationship | **Phase 2 start** |
+| 7 | **Redirect semantics for invoice orders (B.2)** | Single contract, branch on status | Partner relationship | **Publishing Part B.** No longer blocks Phase 2 — implemented as recommended; reversible if the decision goes the other way |
 | 8 | Expose `paymentFlow` in the redirect query string (B.2) | Yes, as a non-authoritative hint | Engineering | — |
 | 9 | Expose `invoice.hostedUrl` / `pdfUrl` (B.4) | Yes | Product/Security | — |
 | 10 | `merchantOfRecord.transactionId` nullable on invoice orders (B.4) | Document as nullable | Partner relationship | — |
@@ -498,13 +522,19 @@ stays available as a schedule lever rather than becoming a mid-flight redesign.
 | 13 | PO document required or optional (C.1) | Optional by default, per-partner override | Product | Phase 2 |
 | 14 | AV scanning required for uploads (C.2) | Confirm either way now | Security/compliance | Phase 2 |
 
-Items 7 and 12 are the two that stop Phase 2 from starting. Items 2, 3 and 4 are the three that stop
-Phase 1 — already-written code — from shipping.
+Items 2, 3 and 4 stop Phase 1 — already-written code — from shipping.
+
+**Updated 2026-08-24.** Items 7 and 12 no longer stop Phase 2 from *starting*: it was built, taking
+the recommended answer to each. Item 7 now gates **publishing Part B to partners** instead, and item
+12 is enforced in code. Items 13 and 14 (PO document requirement, AV scanning) are still open — 13
+was built as "optional by default, per-partner override" and 14 is unconfirmed.
 
 ## 4. If approved
 
 1. Apply Part A to `api-specification.md`, `api-examples.md`, `api_example_client.php`; commit the
    Phase 1 work in the application repo; release together.
 2. Send the subdivision-code notice (A.5) ahead of that release.
-3. Resolve decisions 7 and 12, then apply Parts B and C to the spec as the Phase 2 contract, ahead of
-   implementation, so partners can review the contract before it is built.
+3. Resolve decision 7, then apply Parts B and C to the spec as the Phase 2 contract. Implementation
+   ran ahead of this step, so partners will be reviewing a contract that already has code behind it
+   rather than one written in advance — worth being explicit about when it goes out.
+4. Confirm decision 14 (AV scanning) before the capture form takes real uploads.
