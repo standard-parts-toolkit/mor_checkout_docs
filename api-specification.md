@@ -534,6 +534,7 @@ The request parameters for the tax estimation endpoint are identical to the chec
 | Field | Type | Description |
 |-------|------|-------------|
 | financials | object | Financial details including tax information |
+| financials.currency | string | ISO 4217 currency code the amounts in this object are expressed in. Echoes `cartInformation.currency` from the request |
 | financials.totalTaxCharged | number | Total tax amount |
 | financials.lineItemTotals | array | Financial details for each line item |
 | financials.lineItemTotals[].sku | string | Product SKU |
@@ -545,7 +546,8 @@ The request parameters for the tax estimation endpoint are identical to the chec
 #### Example Response
 ```json
 {
-   "financials": {
+  "financials": {
+    "currency": "USD",
     "totalTaxCharged": 8.75,
     "lineItemTotals": [
       {
@@ -601,6 +603,7 @@ GET /checkout-status?external_order_id=ORD-2024-123456
 | merchantOfRecord.transactionId | string | Unique transaction identifier |
 | merchantOfRecord.orderId | string | Unique order identifier |
 | financials | object | Financial details of the transaction |
+| financials.currency | string | ISO 4217 currency code the amounts in this object are expressed in |
 | financials.totalAmount | number | Total amount charged |
 | financials.totalDiscount | number | Total discount amount applied |
 | financials.totalTax | number | Total tax amount charged |
@@ -621,6 +624,7 @@ GET /checkout-status?external_order_id=ORD-2024-123456
     "orderId": "ORD-2023-03-17-001"
   },
   "financials": {
+    "currency": "USD",
     "totalAmount": 228.73,
     "totalDiscount": 10.00,
     "totalTax": 8.75
@@ -846,7 +850,7 @@ Test API keys and signing keys will be provided for sandbox use.
 
 | Date | Version | Description |
 |------|---------|-------------|
-| 2026-XX-XX | v1.4.0 | **Multi-Currency Support (USD/CAD/MXN)**<br/>• Added optional `cartInformation.currency` to `/checkout` and `/calculate-tax-estimate`, defaulting to `USD`<br/>• Shipping and billing `country` now accept `US`, `CA`, `MX`<br/>• **Breaking:** `state` is now validated as an ISO 3166-2 subdivision code for all countries, including the US<br/>• `/calculate-tax-estimate` now enforces the same country allowlist as `/checkout`<br/>• Currencies are enabled per partner account; an unenabled currency returns 422<br/>• Prices are charged in the currency supplied — no conversion is performed |
+| 2026-XX-XX | v1.4.0 | **Multi-Currency Support (USD/CAD/MXN)**<br/>• Added optional `cartInformation.currency` to `/checkout` and `/calculate-tax-estimate`, defaulting to `USD`<br/>• Shipping and billing `country` now accept `US`, `CA`, `MX`<br/>• **Breaking:** `state` is now validated as an ISO 3166-2 subdivision code for all countries, including the US<br/>• `/calculate-tax-estimate` now enforces the same country allowlist as `/checkout`<br/>• Added `financials.currency` to the `/checkout-status` and `/calculate-tax-estimate` responses<br/>• Currencies are enabled per partner account; an unenabled currency returns 422<br/>• Prices are charged in the currency supplied — no conversion is performed |
 | 2025-09-19 | v1.3.2 | **Payment Flow Terminology Updates**<br/>• Updated documentation terminology from "checkout flow" to "payment flow" to better reflect the user experience<br/>• Enhanced descriptions to clarify the payment page (`/pay/{order_id}`) uses Stripe's Payment Element<br/>• Updated example client code to use payment flow terminology<br/>• Improved clarity around intermediate success/cancel pages in the payment process |
 | 2025-08-07 | v1.3.1 | **Enhanced Security for Checkout Redirects**<br/>• Added `timestamp` query parameter to success/failure redirect URLs<br/>• Added `nonce` query parameter (HMAC-SHA256 of external_order_id + timestamp) for redirect validation<br/>• Timestamp validation window of 5 minutes to prevent replay attacks<br/>• Updated examples to show proper nonce and timestamp validation |
 | 2025-08-05 | v1.3.0 | **Checkout Status Endpoint and Enhanced Checkout Flow**<br/>• Added new `/checkout-status/<mor_order_id>` endpoint for retrieving transaction details<br/>• Added required `configuration.externalOrderId` field to `/checkout` endpoint<br/>• Updated checkout redirect behavior to include `mor_order_id` and `external_order_id` query parameters in success/failure URLs<br/>• Checkout status endpoint returns merchant of record IDs (customerId, transactionId, orderId) and financial totals<br/>• Checkout status endpoint uses `external_order_id + timestamp` for signature authentication instead of empty body<br/>• Updated all example URLs to use `example-partner.com` for consistency<br/>• Returns 404 for non-existent orders, 200 with error object for incomplete payments |

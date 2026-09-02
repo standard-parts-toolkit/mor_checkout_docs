@@ -115,6 +115,7 @@ curl -X POST "http://localhost:8000/api/v1/calculate-tax-estimate" \
 ```json
 {
   "financials": {
+    "currency": "USD",
     "totalTaxCharged": 8.75,
     "lineItemTotals": [
       {
@@ -342,6 +343,7 @@ curl -X GET "http://localhost:8000/api/v1/checkout-status?external_order_id=$EXT
     "orderId": "ORD-2023-03-17-001"
   },
   "financials": {
+    "currency": "USD",
     "totalAmount": 228.73,
     "totalDiscount": 10.00,
     "totalTax": 8.75
