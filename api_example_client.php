@@ -181,6 +181,19 @@ function handleCheckoutReturn($signingKey, $domain, $apiBaseUrl)
 // Sample checkout data based on API examples
 $checkout_data = [
     'cartInformation' => [
+        // ISO 4217 currency for every price in this cart. Optional; defaults to 'USD'.
+        // Supported: 'USD', 'CAD', 'MXN' -- and the currency must be enabled for your
+        // partner account or the request is rejected with a 422.
+        //
+        // No conversion is performed: the prices below are charged as-is in this currency.
+        // Currency is independent of the shipping/billing country, so a Canadian address
+        // paying in USD is valid. For a CAD order, use:
+        //
+        //     'currency' => 'CAD',
+        //
+        // and supply CAD prices. Note that ACH bank debit (us_bank_account) is offered for
+        // USD only; CAD and MXN present card payments only.
+        'currency' => 'USD',
         'lineItems' => [
             [
                 'sku' => 'PROD-001',
