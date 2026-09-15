@@ -6,10 +6,14 @@
  *
  * This script demonstrates:
  * 1. Calculating tax estimates before checkout
- * 2. Making a checkout request (returns 302 redirect to payment page)
- * 3. Checking order status using the checkout-status endpoint
+ * 2. Requesting tax estimates in each supported currency (USD / CAD / MXN),
+ *    including the not-enabled (422) and legitimate $0-tax cases
+ * 3. Making a checkout request (returns 302 redirect to payment page)
+ * 4. Checking order status using the checkout-status endpoint
+ * 5. Formatting every amount with the currency the API returns
+ *    (financials.currency), never a hardcoded "$"
  *
- * Updated for API v1.3.1 with enhanced security for payment flow redirects
+ * Updated for API v1.4.0: multi-currency support (USD / CAD / MXN)
  */
 
 // Configuration
@@ -25,6 +29,44 @@ function generateSignature($data, $timestamp, $signingKey)
     $stringData = is_string($data) ? $data : json_encode($data);
     $dataToSign = $stringData . $timestamp;
     return hash_hmac('sha256', $dataToSign, $signingKey);
+}
+
+/**
+ * Currencies supported by the API. Each must also be enabled for your partner
+ * account before you can transact in it; an unenabled currency returns HTTP 422.
+ */
+function supportedCurrencies()
+{
+    return ['USD', 'CAD', 'MXN'];
+}
+
+/**
+ * Format a monetary amount using the currency the API returned.
+ *
+ * Mirrors the server's display: USD -> "$", CAD -> "CA$", MXN -> "MX$". Once you
+ * send non-USD currencies you must never assume a bare "$" -- always format with
+ * the currency from the response (financials.currency), not the one you sent.
+ */
+function formatMoney($amount, $currency)
+{
+    $symbols = ['USD' => '$', 'CAD' => 'CA$', 'MXN' => 'MX$'];
+    $code = strtoupper((string) $currency);
+    $symbol = isset($symbols[$code]) ? $symbols[$code] : '';
+    return $symbol . number_format((float) $amount, 2) . ' ' . $code;
+}
+
+/**
+ * Clone the sample cart with a specific currency and a unique external order ID.
+ *
+ * Prices are NOT converted -- in a real integration you would supply prices
+ * already denominated in the target currency. Currency is independent of the
+ * shipping/billing country, so a US address paying in CAD is valid.
+ */
+function withCurrency(array $checkoutData, $currency, $externalOrderId)
+{
+    $checkoutData['cartInformation']['currency'] = $currency;
+    $checkoutData['configuration']['externalOrderId'] = $externalOrderId;
+    return $checkoutData;
 }
 
 /**
@@ -268,12 +310,20 @@ try {
 
         if (isset($tax_estimate_response['data']['financials'])) {
             $financials = $tax_estimate_response['data']['financials'];
-            echo "Total Tax Estimated: $" . $financials['totalTaxCharged'] . "\n";
+            // Trust the currency the API echoes back, not the one you sent.
+            $currency = isset($financials['currency'])
+                ? $financials['currency']
+                : ($checkout_data['cartInformation']['currency'] ?? 'USD');
+
+            echo "Currency: " . $currency . "\n";
+            echo "Total Tax Estimated: " . formatMoney($financials['totalTaxCharged'], $currency) . "\n";
 
             if (isset($financials['lineItemTotals'])) {
                 echo "Line Item Tax Breakdown:\n";
                 foreach ($financials['lineItemTotals'] as $item) {
-                    echo "  SKU: " . $item['sku'] . " - Tax: $" . $item['tax'] . " - Total: $" . $item['total'] . "\n";
+                    echo "  SKU: " . $item['sku']
+                        . " - Tax: " . formatMoney($item['tax'], $currency)
+                        . " - Total: " . formatMoney($item['total'], $currency) . "\n";
                 }
             }
         }
@@ -282,6 +332,50 @@ try {
         echo "Tax estimate failed with status: " . $tax_estimate_response['status_code'] . "\n";
         if (isset($tax_estimate_response['data'])) {
             echo "Response: " . json_encode($tax_estimate_response['data'], JSON_PRETTY_PRINT) . "\n";
+        }
+        echo "\n";
+    }
+
+    echo "--- Example: Multi-currency tax estimates (USD / CAD / MXN) ---\n";
+    echo "Each currency must be enabled for your partner account; an unenabled\n";
+    echo "currency returns HTTP 422. A \$0 tax result can be legitimate where the\n";
+    echo "merchant of record has no tax obligation for the destination.\n\n";
+
+    foreach (supportedCurrencies() as $currency) {
+        $currency_cart = withCurrency(
+            $checkout_data,
+            $currency,
+            'ORD-' . $currency . '-' . time()
+        );
+
+        echo "» Requesting a tax estimate in $currency...\n";
+        $currency_response = calculateTaxEstimate($currency_cart, $signing_key, $partner_domain, $api_base_url);
+
+        if ($currency_response['status_code'] == 200 && isset($currency_response['data']['financials'])) {
+            $financials = $currency_response['data']['financials'];
+            // Always report the currency the API echoed back, not the one we sent.
+            $response_currency = isset($financials['currency']) ? $financials['currency'] : $currency;
+            $total_tax = isset($financials['totalTaxCharged']) ? $financials['totalTaxCharged'] : 0;
+
+            echo "  Currency (from response): $response_currency\n";
+            echo "  Total tax: " . formatMoney($total_tax, $response_currency) . "\n";
+
+            if ((float) $total_tax === 0.0) {
+                echo "  Note: \$0 tax -- expected where there is no tax obligation for this destination.\n";
+            }
+        } elseif ($currency_response['status_code'] == 422) {
+            echo "  Rejected (HTTP 422) -- $currency is most likely not enabled for this partner account.\n";
+            // The spec error shape is a list of { field, code, message }.
+            if (isset($currency_response['data']['errors']) && is_array($currency_response['data']['errors'])) {
+                foreach ($currency_response['data']['errors'] as $fieldError) {
+                    if (is_array($fieldError) && isset($fieldError['message'])) {
+                        echo "    - " . $fieldError['message'] . "\n";
+                    }
+                }
+            }
+            echo "    Contact support to have $currency enabled for your account.\n";
+        } else {
+            echo "  Unexpected status: " . $currency_response['status_code'] . "\n";
         }
         echo "\n";
     }
@@ -325,9 +419,11 @@ try {
 
                 if (isset($status_response['data']['financials'])) {
                     $financials = $status_response['data']['financials'];
-                    echo "Total Amount: $" . $financials['totalAmount'] . "\n";
-                    echo "Total Discount: $" . $financials['totalDiscount'] . "\n";
-                    echo "Total Tax: $" . $financials['totalTax'] . "\n";
+                    $currency = isset($financials['currency']) ? $financials['currency'] : 'USD';
+                    echo "Currency: " . $currency . "\n";
+                    echo "Total Amount: " . formatMoney($financials['totalAmount'], $currency) . "\n";
+                    echo "Total Discount: " . formatMoney($financials['totalDiscount'], $currency) . "\n";
+                    echo "Total Tax: " . formatMoney($financials['totalTax'], $currency) . "\n";
                 }
             } elseif ($status_response['status_code'] == 404) {
                 echo "Order not found (this is expected for the sample external order ID)\n";
