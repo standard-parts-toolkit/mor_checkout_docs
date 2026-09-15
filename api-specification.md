@@ -569,6 +569,16 @@ The request parameters for the tax estimation endpoint are identical to the chec
 }
 ```
 
+> **A `0` tax result can be correct.** Tax is determined by the destination
+> jurisdiction and the merchant of record's tax registrations. `totalTaxCharged`
+> (and each line item's `tax`) is `0` when there is no tax obligation for the
+> destination — for example, a US state where the merchant of record has no
+> economic nexus, or any jurisdiction where no applicable tax registration
+> exists. This is expected behaviour, not an error. The amount returned is
+> authoritative: display and charge exactly what the API returns; do not add tax
+> of your own. The same applies to `financials.totalTax` returned by
+> `/checkout-status`.
+
 ### 3. Checkout Status
 
 **Endpoint:** `/checkout-status`  
@@ -606,7 +616,7 @@ GET /checkout-status?external_order_id=ORD-2024-123456
 | financials.currency | string | ISO 4217 currency code the amounts in this object are expressed in |
 | financials.totalAmount | number | Total amount charged |
 | financials.totalDiscount | number | Total discount amount applied |
-| financials.totalTax | number | Total tax amount charged |
+| financials.totalTax | number | Total tax amount charged. May be `0` where no tax obligation applies for the destination (see the note under Calculate Tax Estimate) |
 | error | object | Only present if an error occurred |
 | error.code | string | Error code |
 | error.message | string | Error message |
