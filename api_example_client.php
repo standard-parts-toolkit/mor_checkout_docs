@@ -235,60 +235,65 @@ $checkout_data = [
         //
         // and supply CAD prices. Note that ACH bank debit (us_bank_account) is offered for
         // USD only; CAD and MXN present card payments only.
-        'currency' => 'USD',
+        //
+        // Omitted here, so this cart defaults to USD.
         'lineItems' => [
             [
                 'sku' => 'PROD-001',
-                'price' => 29.99,
-                'quantity' => 2,
+                'price' => 5000.00,
+                'quantity' => 1,
                 'description' => 'Premium Widget',
                 'discounts' => [
                     [
-                        'discountId' => 'DISC-001',
-                        'description' => '10% off',
+                        'discountId' => 'ITEM-20OFF',
+                        'description' => '20% off',
                         'type' => 'percentage',
-                        'value' => 10.0
+                        'value' => 20.0
                     ]
                 ]
+            ],
+            [
+                'sku' => 'PROD-002',
+                'price' => 0.00,
+                'quantity' => 1,
+                'description' => 'Complimentary Setup'
             ]
         ]
     ],
     'orderDiscounts' => [
         [
-            'discountId' => 'ORDER-DISC-001',
-            'description' => 'Order discount',
+            'discountId' => 'ORDER-40OFF',
+            'description' => '$40 off order',
             'type' => 'fixed',
-            'value' => 5.0
+            'value' => 40.0
         ]
     ],
     'shippingAddress' => [
-        'firstName' => 'John',
-        'lastName' => 'Doe',
+        'firstName' => '-',
+        'lastName' => '-',
         'addressLine1' => '123 Main St',
-        'addressLine2' => 'Apt 4B',
         'city' => 'New York',
         'state' => 'NY',
         'postalCode' => '10001',
         'country' => 'US',
-        'phone' => '+1-555-123-4567'
+        'phone' => '-'
     ],
+    // Billing identical to shipping. The 20% item discount brings the $5,000 item down
+    // to $4,000 and the $40 order discount to $3,960, so this should return $351.45 tax
+    // (8.875% NYC combined rate) and a $4,311.45 total, with $1,040.00 in
+    // financials.totalDiscount.
     'billingAddress' => [
-        'sameAsShipping' => false,
-        'firstName' => 'John',
-        'lastName' => 'Doe',
-        'addressLine1' => '456 Oak Ave',
-        'addressLine2' => 'Suite 100',
+        'sameAsShipping' => true,
+        'firstName' => '-',
+        'lastName' => '-',
+        'addressLine1' => '123 Main St',
         'city' => 'New York',
         'state' => 'NY',
-        'postalCode' => '10002',
+        'postalCode' => '10001',
         'country' => 'US',
-        'phone' => '+1-555-987-6543'
+        'phone' => '-'
     ],
-    'email' => 'john.doe@example.com',
-    'renewal' => [
-        'originalPurchaseDate' => '2023-01-15',
-        'originalTransactionId' => 'TXN-12345'
-    ],
+    'email' => 'customer@example.com',
     'configuration' => [
         'successReturnUrl' => 'https://example-partner.com/success',
         'failureReturnUrl' => 'https://example-partner.com/failure',
